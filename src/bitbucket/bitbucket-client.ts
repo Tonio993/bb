@@ -129,25 +129,41 @@ export class BitbucketClient {
             );
         }
 
-        const responseBody =
-            await readResponseBody(response);
+        let responseBody: unknown;
+
+        try {
+            responseBody = await readResponseBody(response);
+        } catch (error) {
+            const message = error instanceof Error
+                ? error.message
+                : String(error);
+
+            throw new BitbucketApiError(
+                `Unable to read Bitbucket response [${response.status}]: ${message}`,
+                {
+                    statusCode: response.status,
+                    method,
+                    path,
+                },
+            );
+        }
 
         if (!response.ok) {
-        const message =
-            getBitbucketErrorMessage(
-                responseBody,
-                response.statusText,
-            );
+            const message =
+                getBitbucketErrorMessage(
+                    responseBody,
+                    response.statusText,
+                );
 
-        throw new BitbucketApiError(
-            `Bitbucket API request failed ` +
-            `[${response.status}]: ${message}`,
-            {
-                statusCode: response.status,
-                method,
-                path,
-            },
-        );
+            throw new BitbucketApiError(
+                `Bitbucket API request failed ` +
+                `[${response.status}]: ${message}`,
+                {
+                    statusCode: response.status,
+                    method,
+                    path,
+                },
+            );
         }
 
         if (responseBody === undefined) {
