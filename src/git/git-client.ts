@@ -55,7 +55,7 @@ export class GitClient {
                     shell: false,
                     windowsHide: true,
                     env: this.createEnvironment(
-                        options.authenticated ?? false,
+                        options.authenticated ?? requiresAuthentication(args),
                     ),
                 },
             );
@@ -332,6 +332,65 @@ export class GitClient {
                 };
             });
     }
+}
+
+
+function requiresAuthentication(
+    args: readonly string[],
+): boolean {
+    const optionsWithValue = [
+        "-C",
+        "-c",
+        "--git-dir",
+        "--work-tree",
+        "--namespace",
+        "--config-env",
+        "--attr-source",
+    ];
+
+    // Leave argument validation to Git; only determine whether to add authentication.
+    for (let index = 0; index < args.length; index++) {
+        const argument = args[index];
+
+        if (
+            argument === "--help" || argument === "-h" ||
+            argument === "--version" || argument === "-v"
+        ) {
+            return false;
+        }
+
+        if (optionsWithValue.includes(argument)) {
+            index++;
+            continue;
+        }
+
+        if (argument.startsWith("-")) {
+            continue;
+        }
+
+        for (const commandArgument of args.slice(index + 1)) {
+            if (commandArgument === "--") {
+                break;
+            }
+
+            if (
+                commandArgument === "--help" ||
+                (commandArgument === "-h" && argument !== "ls-remote")
+            ) {
+                return false;
+            }
+        }
+
+        return [
+            "fetch",
+            "pull",
+            "push",
+            "clone",
+            "ls-remote",
+        ].includes(argument);
+    }
+
+    return false;
 }
 
 

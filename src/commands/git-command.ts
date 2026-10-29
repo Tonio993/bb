@@ -13,7 +13,7 @@ export function registerGitCommand(
     program
         .command("git")
         .description(
-            "Execute a Git command with Bitbucket authentication.",
+            "Execute a Git command, authenticating remote operations with Bitbucket.",
         )
         .argument(
             "[args...]",
@@ -29,6 +29,8 @@ Examples:
   bb git fetch origin
   bb git log --oneline -10
   bb git -C C:\\repository status
+
+Bitbucket authentication is added for fetch, pull, push, clone, and ls-remote.
 `,
         )
         .action(
@@ -42,9 +44,6 @@ Examples:
                 const exitCode =
                     context.gitClient.run(
                         args,
-                        {
-                            authenticated: true,
-                        },
                     );
 
                 if (exitCode !== 0) {
