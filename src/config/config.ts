@@ -251,9 +251,13 @@ export class ConfigStore {
                     "utf8",
                 );
 
-            return JSON.parse(
+            const config: unknown = JSON.parse(
                 content,
-            ) as RawConfig;
+            );
+
+            assertRawConfig(config);
+
+            return config;
         } catch (error) {
             const message =
                 error instanceof Error
@@ -288,6 +292,69 @@ export class ConfigStore {
             "utf8",
         );
     }
+}
+
+
+function assertRawConfig(
+    value: unknown,
+): asserts value is RawConfig {
+    if (!isObject(value)) {
+        throw new Error(
+            "Configuration must be a JSON object.",
+        );
+    }
+
+    for (const section of ["bitbucket", "git"] as const) {
+        if (
+            value[section] !== undefined &&
+            !isObject(value[section])
+        ) {
+            throw new Error(
+                `Configuration section '${section}' must be an object.`,
+            );
+        }
+    }
+
+    for (const key of CONFIG_KEYS) {
+        const [section, name] = key.split(".");
+        const sectionValue = value[section];
+
+        if (!isObject(sectionValue)) {
+            continue;
+        }
+
+        const entry = sectionValue[name];
+
+        if (entry === undefined) {
+            continue;
+        }
+
+        if (key === "bitbucket.defaultReviewers") {
+            if (
+                !Array.isArray(entry) ||
+                !entry.every((reviewer) => typeof reviewer === "string")
+            ) {
+                throw new Error(
+                    `Configuration '${key}' must be an array of strings.`,
+                );
+            }
+        } else if (typeof entry !== "string") {
+            throw new Error(
+                `Configuration '${key}' must be a string.`,
+            );
+        }
+    }
+}
+
+
+function isObject(
+    value: unknown,
+): value is Record<string, unknown> {
+    return (
+        typeof value === "object" &&
+        value !== null &&
+        !Array.isArray(value)
+    );
 }
 
 

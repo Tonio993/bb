@@ -34,25 +34,15 @@ let cachedConfig:
 let cachedBitbucketClient: BitbucketClient | undefined;
 
 
+let cachedGitClient: GitClient | undefined;
+
+
 const getConfig = () => {
     cachedConfig ??=
         configStore.loadRequired();
 
     return cachedConfig;
 };
-
-
-const gitRemote =
-    configStore.get(
-        "git.remote",
-    );
-
-const gitClient =
-    new GitClient(
-        typeof gitRemote === "string"
-            ? gitRemote
-            : "origin",
-    );
 
 
 const context: CommandContext = {
@@ -71,7 +61,20 @@ const context: CommandContext = {
         return cachedBitbucketClient;
     },
 
-    gitClient,
+    get gitClient() {
+        if (!cachedGitClient) {
+            const remote =
+                configStore.get("git.remote");
+
+            cachedGitClient = new GitClient(
+                typeof remote === "string"
+                    ? remote
+                    : "origin",
+            );
+        }
+
+        return cachedGitClient;
+    },
 };
 
 
