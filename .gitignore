@@ -1,0 +1,59 @@
+# Dependencies
+node_modules/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Build output
+dist/
+build/
+out/
+
+# Coverage
+coverage/
+.nyc_output/
+
+# TypeScript
+*.tsbuildinfo
+
+# Environment variables / local secrets
+.env
+.env.*
+!.env.example
+
+# Local runtime/config overrides
+config.local.json
+*.local.json
+
+# IDEs
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.swp
+*.swo
+
+# Node diagnostic reports
+report.*.json
+
+# Packaged executables / release artifacts
+*.exe
+*.msi
+*.zip
+*.tar.gz
+
+# Local test artifacts
+test-results/
