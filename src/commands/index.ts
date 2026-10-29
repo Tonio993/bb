@@ -26,6 +26,10 @@ import {
     registerCreatePrCommand,
 } from "./create-pr-command.ts";
 
+import {
+    registerMergePrCommand,
+} from "./merge-pr-command.ts";
+
 
 type CommandRegistrar = (
     program: Command,
@@ -39,6 +43,7 @@ const commandRegistrars: CommandRegistrar[] = [
     registerGetPrUrlsCommand,
     registerGetPrUrlCommand,
     registerCreatePrCommand,
+    registerMergePrCommand,
 ];
 
 

@@ -12,10 +12,27 @@ export type BitbucketPullRequestRef = {
     repository: BitbucketRepository;
 };
 
+export type BitbucketPullRequestReviewer = {
+    status: string;
+};
+
+export type BitbucketCommitMessageSuggestion = {
+    title?: string;
+    body?: string;
+};
+
+export type BitbucketPullRequestTask = {
+    id: number;
+    version: number;
+    state: string;
+    severity: string;
+};
+
 export type BitbucketPullRequest = {
     id: number;
     version: number;
     state: string;
+    reviewers: BitbucketPullRequestReviewer[];
 
     fromRef: BitbucketPullRequestRef;
     toRef: BitbucketPullRequestRef;

@@ -37,7 +37,7 @@ function createFixture(t: TestContext) {
     });
     const repository = { name: "Payments", slug: "payments", project: { key: "PROJECT" } };
     const pullRequest: BitbucketPullRequest = {
-        id: 42, version: 0, state: "OPEN",
+        id: 42, version: 0, state: "OPEN", reviewers: [],
         fromRef: { id: "refs/heads/feature/current", displayId: "feature/current", repository },
         toRef: { id: "refs/heads/develop", displayId: "develop", repository },
         links: { self: [{ href: "https://bitbucket.example/bitbucket/projects/PROJECT/repos/payments/pull-requests/42" }] },
