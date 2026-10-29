@@ -13,7 +13,7 @@ import type { CommandContext } from "../src/cli/command-context.ts";
 import { GitClient } from "../src/git/git-client.ts";
 import { GitCommandError } from "../src/git/git-command-error.ts";
 
-function mockGit(t: TestContext, result: Partial<SpawnSyncReturns<Buffer>> = {}) {
+function mockGit(t: TestContext, result: Partial<SpawnSyncReturns<string | Buffer>> = {}) {
     const execute = t.mock.method(childProcess, "spawnSync", () => ({
         pid: 1,
         output: [],
@@ -174,6 +174,34 @@ test("explicit authentication options override automatic detection", (t) => {
     assert.equal(tokenProvider.mock.callCount(), 0);
     client.run(["status"], { authenticated: true });
     assert.equal(tokenProvider.mock.callCount(), 1);
+});
+
+test("fetch uses the configured remote and requests authentication", (t) => {
+    const execute = mockGit(t, { stdout: "", stderr: "" });
+    const tokenProvider = t.mock.fn(() => "test-bitbucket-token");
+    new GitClient("upstream", tokenProvider).fetch();
+    assert.deepEqual(execute.mock.calls[0].arguments[1], ["fetch", "upstream"]);
+    assert.equal(tokenProvider.mock.callCount(), 1);
+});
+
+test("commit history excludes merges, requests oldest first, and parses subjects and bodies without authentication", (t) => {
+    const execute = mockGit(t, {
+        stdout: "First commit\x1eFirst detail\r\nSecond detail\r\n\x1d\nSecond commit\x1e\x1d\n",
+        stderr: "",
+    });
+    const tokenProvider = t.mock.fn(() => { throw new Error("Reading commit history must not request a token."); });
+    const commits = new GitClient("upstream", tokenProvider).commitsBetween(
+        "refs/remotes/upstream/develop", "refs/remotes/upstream/feature/test",
+    );
+    assert.deepEqual(commits, [
+        { subject: "First commit", body: "First detail\r\nSecond detail" },
+        { subject: "Second commit", body: "" },
+    ]);
+    assert.deepEqual(execute.mock.calls[0].arguments[1], [
+        "log", "refs/remotes/upstream/develop..refs/remotes/upstream/feature/test",
+        "--no-merges", "--reverse", "--format=%s%x1e%b%x1d",
+    ]);
+    assert.equal(tokenProvider.mock.callCount(), 0);
 });
 
 test("bb git forwards Git options and propagates the exit code without requesting a token for local commands", async (t) => {

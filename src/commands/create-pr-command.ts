@@ -3,6 +3,10 @@ import type {
 } from "commander";
 
 import {
+    Option,
+} from "commander";
+
+import {
     createPullRequest,
 } from "../bitbucket/pull-requests.ts";
 
@@ -28,6 +32,8 @@ import {
 
 
 type CreatePrOptions = {
+    sourceBranch?: string;
+    targetBranch?: string;
     title?: string;
     projectKey?: string;
     reviewer: string[];
@@ -53,6 +59,14 @@ export function registerCreatePrCommand(
             "Target branch",
         )
         .option(
+            "--source-branch <branch>",
+            "Source branch",
+        )
+        .option(
+            "--target-branch <branch>",
+            "Target branch",
+        )
+        .option(
             "--title <title>",
             "Override the generated Pull Request title",
         )
@@ -66,9 +80,11 @@ export function registerCreatePrCommand(
             collectReviewer,
             [],
         )
-        .option(
-            "--no-reviewers",
-            "Create the Pull Request without reviewers",
+        .addOption(
+            new Option(
+                "--no-reviewers",
+                "Create the Pull Request without reviewers",
+            ).conflicts("reviewer"),
         )
         .addHelpText(
             "after",
@@ -76,6 +92,8 @@ export function registerCreatePrCommand(
 Examples:
   bb create-pr develop
   bb create-pr feature/my-change develop
+  bb create-pr --target-branch develop
+  bb create-pr --source-branch feature/my-change --target-branch develop
   bb create-pr develop --title "Custom title"
   bb create-pr develop --reviewer mario --reviewer luca
   bb create-pr develop --reviewer mario,luca
@@ -112,6 +130,14 @@ async function executeCreatePr(
             target,
             () =>
                 context.gitClient.currentBranch(),
+            options,
+        );
+
+    const reviewers =
+        resolvePullRequestReviewers(
+            options.reviewer,
+            options.reviewers === false,
+            context.config.bitbucket.defaultReviewers,
         );
 
     const repositoryContext =
@@ -154,14 +180,6 @@ async function executeCreatePr(
             branches.sourceBranch,
             branches.targetBranch,
             remote,
-        );
-
-
-    const reviewers =
-        resolvePullRequestReviewers(
-            options.reviewer,
-            options.reviewers === false,
-            context.config.bitbucket.defaultReviewers,
         );
 
 

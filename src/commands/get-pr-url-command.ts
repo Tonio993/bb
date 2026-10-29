@@ -88,24 +88,12 @@ async function executeGetPrUrl(
     options: GetPrUrlOptions,
     context: CommandContext,
 ): Promise<void> {
-    if (
-        (source || target) &&
-        (
-            options.sourceBranch ||
-            options.targetBranch
-        )
-    ) {
-        throw new Error(
-            "Positional branch arguments cannot be combined " +
-            "with --source-branch or --target-branch.",
-        );
-    }
-
     const branches =
         resolvePullRequestBranches(
-            options.sourceBranch ?? source,
-            options.targetBranch ?? target,
-            () => context.gitClient.currentBranch()
+            source,
+            target,
+            () => context.gitClient.currentBranch(),
+            options,
         );
 
     const repositoryContext =

@@ -16,10 +16,10 @@ export function getPullRequestContent(
     remote: string,
 ): PullRequestContent {
     const sourceRef =
-        `${remote}/${sourceBranch}`;
+        `refs/remotes/${remote}/${sourceBranch}`;
 
     const targetRef =
-        `${remote}/${targetBranch}`;
+        `refs/remotes/${remote}/${targetBranch}`;
 
     const commits =
         gitClient.commitsBetween(

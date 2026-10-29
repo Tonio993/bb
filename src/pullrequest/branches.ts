@@ -12,7 +12,29 @@ export function resolvePullRequestBranches(
     sourceBranch: string | undefined,
     targetBranch: string | undefined,
     currentBranchProvider: CurrentBranchProvider,
+    options: Partial<PullRequestBranches> = {},
 ): PullRequestBranches {
+    if (
+        options.sourceBranch !== undefined ||
+        options.targetBranch !== undefined
+    ) {
+        if (sourceBranch !== undefined || targetBranch !== undefined) {
+            throw new Error(
+                "Positional branch arguments cannot be combined " +
+                "with --source-branch or --target-branch.",
+            );
+        }
+
+        if (!options.targetBranch) {
+            throw new Error(
+                "Target branch is required.",
+            );
+        }
+
+        sourceBranch = options.sourceBranch;
+        targetBranch = options.targetBranch;
+    }
+
     if (!sourceBranch && !targetBranch) {
         throw new Error(
             "Target branch is required.",
