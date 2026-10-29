@@ -94,7 +94,11 @@ export async function getOpenPullRequest(
             return undefined;
         }
 
-        if (response.nextPageStart === undefined) {
+        if (
+            response.nextPageStart === undefined ||
+            !Number.isInteger(response.nextPageStart) ||
+            response.nextPageStart <= start
+        ) {
             throw new Error(
                 "Bitbucket did not provide the next Pull Request page.",
             );
@@ -202,7 +206,11 @@ async function getRepositoryOpenPullRequests(
             return pullRequests;
         }
 
-        if (response.nextPageStart === undefined) {
+        if (
+            response.nextPageStart === undefined ||
+            !Number.isInteger(response.nextPageStart) ||
+            response.nextPageStart <= start
+        ) {
             throw new Error(
                 "Bitbucket did not provide the next Pull Request page.",
             );
@@ -436,7 +444,11 @@ async function completePullRequestTasks(
             break;
         }
 
-        if (page.nextPageStart === undefined || page.nextPageStart <= start) {
+        if (
+            page.nextPageStart === undefined ||
+            !Number.isInteger(page.nextPageStart) ||
+            page.nextPageStart <= start
+        ) {
             throw new Error("Bitbucket did not provide the next Pull Request task page.");
         }
 

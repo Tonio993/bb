@@ -10,6 +10,10 @@ import type {
     CommandContext,
 } from "../cli/command-context.ts";
 
+import {
+    resolvePullRequestBranches,
+} from "../pullrequest/branches.ts";
+
 
 type GetPrUrlsOptions = {
     projectKey?: string;
@@ -75,6 +79,14 @@ async function executeGetPrUrls(
     options: GetPrUrlsOptions,
     context: CommandContext,
 ): Promise<void> {
+    const branches = resolvePullRequestBranches(
+        sourceBranch,
+        targetBranch,
+        () => {
+            throw new Error("Source and target branches are required.");
+        },
+    );
+
     const projectKey =
         options.projectKey?.trim() ||
         context.config.bitbucket.projectKey;
@@ -84,8 +96,7 @@ async function executeGetPrUrls(
             context.bitbucketClient,
             {
                 projectKey,
-                sourceBranch,
-                targetBranch,
+                ...branches,
                 repositoryFilter: options.repositoryFilter,
             },
         );

@@ -39,7 +39,11 @@ export async function getProjectRepositories(
             return repositories;
         }
 
-        if (response.nextPageStart === undefined) {
+        if (
+            response.nextPageStart === undefined ||
+            !Number.isInteger(response.nextPageStart) ||
+            response.nextPageStart <= start
+        ) {
             throw new Error(
                 "Bitbucket did not provide the next repository page.",
             );

@@ -395,7 +395,7 @@ test("Bitbucket must confirm task completion before merging", async (t) => {
     assert.equal(fixture.requests.filter(({ method }) => method === "POST").length, 0);
 });
 
-for (const nextPageStart of [undefined, 0]) {
+for (const nextPageStart of [undefined, 0, -1, 0.5]) {
     test(`invalid task pagination ${nextPageStart} prevents task updates and merging`, async (t) => {
         const fixture = createFixture(t);
         fixture.taskPages[0].isLastPage = false;
