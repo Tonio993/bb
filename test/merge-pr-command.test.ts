@@ -452,3 +452,18 @@ test("malformed task details stop the workflow before updating tasks or merging"
     });
     assert.equal(fixture.requests.filter(({ method }) => method === "PUT" || method === "POST").length, 0);
 });
+
+test("a pagination failure after reading open tasks prevents all task updates and merging", async (t) => {
+    const fixture = createFixture(t);
+    const task = { id: 101, version: 1, state: "OPEN", severity: "BLOCKER" };
+    fixture.taskPages.splice(0, 1,
+        { values: [task], size: 1, limit: 100, start: 0, isLastPage: false, nextPageStart: 37 },
+        { values: [], size: 0, limit: 100, start: 37, isLastPage: false, nextPageStart: 37 },
+    );
+    fixture.taskDetails.set(101, task);
+    await assert.rejects(fixture.run(["develop", "--complete-tasks"]), /next Pull Request task page/);
+    assert.equal(fixture.requests.filter(({ path }) => path.includes("blocker-comments?")).length, 2);
+    assert.equal(fixture.requests.filter(({ path }) => path.endsWith("/comments/101")).length, 0);
+    assert.equal(fixture.requests.filter(({ method }) => method === "PUT" || method === "POST").length, 0);
+    assert.equal(fixture.output.mock.callCount(), 0);
+});

@@ -7,7 +7,8 @@ import type {
     BitbucketPullRequestTask,
     BitbucketRepository,
 } from "./bitbucket-types.ts";
-import { parseCommitMessageSuggestion, parsePage, parsePullRequest, parseTask } from "./response-parsers.ts";
+import { parseCommitMessageSuggestion, parsePullRequest, parseTask } from "./response-parsers.ts";
+import { iterateBitbucketPages } from "./pagination.ts";
 
 import {
     getProjectRepositories,
@@ -55,25 +56,7 @@ export async function getOpenPullRequest(
         targetBranch,
     } = options;
 
-    const encodedProjectKey =
-        encodeURIComponent(projectKey);
-
-    const encodedRepository =
-        encodeURIComponent(repository);
-
-    let start = 0;
-    const limit = 100;
-
-    while (true) {
-        const path =
-            `rest/api/latest/projects/${encodedProjectKey}` +
-            `/repos/${encodedRepository}` +
-            `/pull-requests` +
-            `?state=OPEN&start=${start}&limit=${limit}`;
-
-        const response =
-            await client.get(path, parsePage(parsePullRequest));
-
+    for await (const response of getRepositoryPullRequestPages(client, projectKey, repository)) {
         const pullRequest =
             response.values.find(
                 (value) =>
@@ -87,23 +70,8 @@ export async function getOpenPullRequest(
             return pullRequest;
         }
 
-        if (response.isLastPage) {
-            return undefined;
-        }
-
-        if (
-            response.nextPageStart === undefined ||
-            !Number.isInteger(response.nextPageStart) ||
-            response.nextPageStart <= start
-        ) {
-            throw new Error(
-                "Bitbucket did not provide the next Pull Request page.",
-            );
-        }
-
-        start =
-            response.nextPageStart;
     }
+    return undefined;
 }
 
 
@@ -155,28 +123,10 @@ async function getRepositoryOpenPullRequests(
     sourceBranch: string,
     targetBranch: string,
 ): Promise<BitbucketPullRequestWithRepository[]> {
-    const encodedProjectKey =
-        encodeURIComponent(projectKey);
-
-    const encodedRepository =
-        encodeURIComponent(repository.slug);
-
     const pullRequests:
         BitbucketPullRequestWithRepository[] = [];
 
-    let start = 0;
-    const limit = 100;
-
-    while (true) {
-        const path =
-            `rest/api/latest/projects/${encodedProjectKey}` +
-            `/repos/${encodedRepository}` +
-            `/pull-requests` +
-            `?state=OPEN&start=${start}&limit=${limit}`;
-
-        const response =
-            await client.get(path, parsePage(parsePullRequest));
-
+    for await (const response of getRepositoryPullRequestPages(client, projectKey, repository.slug)) {
         const matches =
             response.values
                 .filter(
@@ -197,25 +147,19 @@ async function getRepositoryOpenPullRequests(
             ...matches,
         );
 
-        if (response.isLastPage) {
-            return pullRequests;
-        }
-
-        if (
-            response.nextPageStart === undefined ||
-            !Number.isInteger(response.nextPageStart) ||
-            response.nextPageStart <= start
-        ) {
-            throw new Error(
-                "Bitbucket did not provide the next Pull Request page.",
-            );
-        }
-
-        start =
-            response.nextPageStart;
     }
+    return pullRequests;
 }
 
+function getRepositoryPullRequestPages(
+    client: BitbucketClient,
+    projectKey: string,
+    repository: string,
+) {
+    const path = `rest/api/latest/projects/${encodeURIComponent(projectKey)}` +
+        `/repos/${encodeURIComponent(repository)}/pull-requests?state=OPEN`;
+    return iterateBitbucketPages(client, path, parsePullRequest, "Pull Request");
+}
 
 function matchesRepositoryFilter(
     repository: BitbucketRepository,
@@ -430,29 +374,12 @@ async function completePullRequestTasks(
     pullRequestPath: string,
 ): Promise<void> {
     const tasks: BitbucketPullRequestTask[] = [];
-    let start = 0;
 
     // Read all pages before updates so resolving tasks cannot shift the remaining pages.
-    while (true) {
-        const page = await client.get(
-            `${pullRequestPath}/blocker-comments?start=${start}&limit=100`,
-            parsePage(parseTask),
-        );
+    for await (const page of iterateBitbucketPages(
+        client, `${pullRequestPath}/blocker-comments`, parseTask, "Pull Request task",
+    )) {
         tasks.push(...page.values);
-
-        if (page.isLastPage) {
-            break;
-        }
-
-        if (
-            page.nextPageStart === undefined ||
-            !Number.isInteger(page.nextPageStart) ||
-            page.nextPageStart <= start
-        ) {
-            throw new Error("Bitbucket did not provide the next Pull Request task page.");
-        }
-
-        start = page.nextPageStart;
     }
 
     for (const task of tasks) {

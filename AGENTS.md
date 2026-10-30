@@ -146,6 +146,7 @@ src/
 │   ├── bitbucket-api-error.ts
 │   ├── bitbucket-client.ts
 │   ├── bitbucket-types.ts
+│   ├── pagination.ts
 │   ├── response-parsers.ts
 │   ├── pull-requests.ts
 │   └── repositories.ts
@@ -1141,6 +1142,8 @@ Il limite utilizzato normalmente può essere:
 ```
 
 Non assumere che la prima pagina contenga tutti i risultati.
+
+Usare `iterateBitbucketPages` in `bitbucket/pagination.ts` per repository, PR e task. L'iteratore gestisce `start`, `limit=100`, parsing delle pagine e avanzamento tramite `nextPageStart`, che deve essere un intero sicuro strettamente crescente. Le richieste sono lazy e sequenziali: non anticipare pagine dopo l'uscita del consumer. La ricerca della prima PR si interrompe al primo risultato; il completamento dei task deve invece raccogliere tutte le pagine prima di effettuare aggiornamenti.
 
 ---
 
