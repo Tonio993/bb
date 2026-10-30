@@ -290,8 +290,8 @@ test("missing reviewer data from Bitbucket prevents merging", async (t) => {
 test("missing target repository data prevents merging", async (t) => {
     const fixture = createFixture(t);
     fixture.current.toRef.repository.project.key = "";
-    await assert.rejects(fixture.run(["develop"]), /Unable to determine the Pull Request project/);
-    assert.equal(fixture.requests.length, 2);
+    await assert.rejects(fixture.run(["develop"]), /valid repository project key/);
+    assert.equal(fixture.requests.length, 1);
 });
 
 test("a response that does not confirm MERGED is not reported as a successful merge", async (t) => {
@@ -436,4 +436,19 @@ test("task completion can be combined with a prefixed merge message", async (t) 
         message: "[RELEASE] Pull request #42: validate payments\n\nMerge feature/current to develop",
         autoSubject: false,
     });
+});
+
+test("malformed task details stop the workflow before updating tasks or merging", async (t) => {
+    const fixture = createFixture(t);
+    fixture.taskPages[0].values = [{ id: 101, version: 0, state: "OPEN", severity: "BLOCKER" }];
+    fixture.taskDetails.set(101, { id: 101, version: Number.NaN, state: "OPEN", severity: "BLOCKER" });
+    await assert.rejects(fixture.run(["develop", "--complete-tasks"]), (error: unknown) => {
+        assert.ok(error instanceof BitbucketApiError);
+        assert.equal(error.statusCode, 200);
+        assert.equal(error.method, "GET");
+        assert.match(error.path ?? "", /comments\/101$/);
+        assert.match(error.message, /valid Pull Request task version/);
+        return true;
+    });
+    assert.equal(fixture.requests.filter(({ method }) => method === "PUT" || method === "POST").length, 0);
 });

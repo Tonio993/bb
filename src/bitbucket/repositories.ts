@@ -3,9 +3,9 @@ import {
 } from "./bitbucket-client.ts";
 
 import type {
-    BitbucketPage,
     BitbucketRepository,
 } from "./bitbucket-types.ts";
+import { parsePage, parseRepository } from "./response-parsers.ts";
 
 
 export async function getProjectRepositories(
@@ -27,9 +27,7 @@ export async function getProjectRepositories(
             `?start=${start}&limit=${limit}`;
 
         const response =
-            await client.get<
-                BitbucketPage<BitbucketRepository>
-            >(path);
+            await client.get(path, parsePage(parseRepository));
 
         repositories.push(
             ...response.values,

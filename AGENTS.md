@@ -146,6 +146,7 @@ src/
 │   ├── bitbucket-api-error.ts
 │   ├── bitbucket-client.ts
 │   ├── bitbucket-types.ts
+│   ├── response-parsers.ts
 │   ├── pull-requests.ts
 │   └── repositories.ts
 │
@@ -585,6 +586,12 @@ Il client deve centralizzare:
 * normalizzazione degli URL.
 
 Non eseguire `fetch` direttamente nei comandi.
+
+Ogni richiesta ha un timeout predefinito di 60 secondi, valido anche durante la lettura del corpo. Il client accetta un timeout personalizzato nel costruttore per test e composizione; non aggiungere opzioni CLI senza una necessità concreta. Rimuovere sempre il timer al termine della richiesta. Non introdurre retry automatici, soprattutto per creazione, merge e aggiornamento dei task: il server può aver completato una scrittura prima di un timeout.
+
+Senza parser il client restituisce `unknown`. Per ottenere un risultato tipizzato, passare un parser esplicito dell'endpoint. `response-parsers.ts` verifica le strutture usate dall'applicazione, accettando campi aggiuntivi. Tutte le operazioni REST applicative devono usare i parser appropriati, senza conversioni generiche non verificate tramite `as T`. Le response di successo non JSON devono essere rifiutate senza includerne il contenuto nell'errore. Le response HTTP di errore mantengono la gestione dei messaggi JSON o testuali.
+
+Gli errori di timeout, lettura o validazione della risposta usano `BitbucketApiError`, mantenendo metodo, percorso e status quando disponibile. La lettura dei corpi vuoti rimane disponibile; i parser degli endpoint che richiedono JSON devono rifiutarli.
 
 ---
 

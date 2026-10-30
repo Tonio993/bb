@@ -15,69 +15,65 @@ type HttpMethod =
 type TokenProvider =
     () => string;
 
+export type ResponseParser<T> = (value: unknown) => T;
+
+type BitbucketClientOptions = {
+    timeoutMs?: number;
+};
 
 export class BitbucketClient {
     private readonly baseUrl: string;
     private readonly tokenProvider: TokenProvider;
+    private readonly timeoutMs: number;
 
     constructor(
         config: BbConfig["bitbucket"],
         tokenProvider: TokenProvider,
+        options: BitbucketClientOptions = {},
     ) {
+        this.timeoutMs = options.timeoutMs ?? 60000;
+        if (!Number.isInteger(this.timeoutMs) || this.timeoutMs <= 0 || this.timeoutMs > 2147483647) {
+            throw new Error("Bitbucket request timeout must be a positive integer no greater than 2147483647 milliseconds.");
+        }
         this.baseUrl = config.url.replace(/\/+$/, "");
         this.tokenProvider = tokenProvider;
     }
 
 
-    async get<T>(
-        path: string,
-    ): Promise<T> {
-        return this.request<T>(
-            "GET",
-            path,
-        );
+    get(path: string): Promise<unknown>;
+    get<T>(path: string, parse: ResponseParser<T>): Promise<T>;
+    get(path: string, parse?: ResponseParser<unknown>): Promise<unknown> {
+        return this.request("GET", path, undefined, parse);
     }
 
 
-    async post<T>(
-        path: string,
-        body?: unknown,
-    ): Promise<T> {
-        return this.request<T>(
-            "POST",
-            path,
-            body,
-        );
+    post(path: string, body?: unknown): Promise<unknown>;
+    post<T>(path: string, body: unknown, parse: ResponseParser<T>): Promise<T>;
+    post(path: string, body?: unknown, parse?: ResponseParser<unknown>): Promise<unknown> {
+        return this.request("POST", path, body, parse);
     }
 
 
-    async put<T>(
-        path: string,
-        body?: unknown,
-    ): Promise<T> {
-        return this.request<T>(
-            "PUT",
-            path,
-            body,
-        );
+    put(path: string, body?: unknown): Promise<unknown>;
+    put<T>(path: string, body: unknown, parse: ResponseParser<T>): Promise<T>;
+    put(path: string, body?: unknown, parse?: ResponseParser<unknown>): Promise<unknown> {
+        return this.request("PUT", path, body, parse);
     }
 
 
-    async delete<T>(
-        path: string,
-    ): Promise<T> {
-        return this.request<T>(
-            "DELETE",
-            path,
-        );
+    delete(path: string): Promise<unknown>;
+    delete<T>(path: string, parse: ResponseParser<T>): Promise<T>;
+    delete(path: string, parse?: ResponseParser<unknown>): Promise<unknown> {
+        return this.request("DELETE", path, undefined, parse);
     }
 
 
-    private async request<T>(
+    private async request(
         method: HttpMethod,
         path: string,
         body?: unknown,
-    ): Promise<T> {
+        parse?: ResponseParser<unknown>,
+    ): Promise<unknown> {
         const token =
             this.tokenProvider();
 
@@ -102,7 +98,10 @@ export class BitbucketClient {
                 JSON.stringify(body);
         }
 
-        let response: Response;
+        const controller = new AbortController();
+        request.signal = controller.signal;
+        const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+        let response: Response | undefined;
 
         try {
             response =
@@ -110,63 +109,38 @@ export class BitbucketClient {
                     url,
                     request,
                 );
-        } catch (error) {
-            const message =
-                error instanceof Error
-                    ? error.message
-                    : String(error);
+            const responseBody = await readResponseBody(response);
+            controller.signal.throwIfAborted();
 
-            throw new BitbucketApiError(
-                `Unable to connect to Bitbucket: ${message}`,
-                {
-                    method,
-                    path,
-                },
-            );
-        }
-
-        let responseBody: unknown;
-
-        try {
-            responseBody = await readResponseBody(response);
-        } catch (error) {
-            const message = error instanceof Error
-                ? error.message
-                : String(error);
-
-            throw new BitbucketApiError(
-                `Unable to read Bitbucket response [${response.status}]: ${message}`,
-                {
-                    statusCode: response.status,
-                    method,
-                    path,
-                },
-            );
-        }
-
-        if (!response.ok) {
-            const message =
-                getBitbucketErrorMessage(
-                    responseBody,
-                    response.statusText,
+            if (!response.ok) {
+                const message = getBitbucketErrorMessage(responseBody, response.statusText);
+                throw new BitbucketApiError(
+                    `Bitbucket API request failed [${response.status}]: ${message}`,
+                    { statusCode: response.status, method, path },
                 );
+            }
 
-            throw new BitbucketApiError(
-                `Bitbucket API request failed ` +
-                `[${response.status}]: ${message}`,
-                {
-                    statusCode: response.status,
-                    method,
-                    path,
-                },
-            );
+            if (!parse) return responseBody;
+            try {
+                return parse(responseBody);
+            } catch (error) {
+                const message = error instanceof Error ? error.message : "Unexpected response structure.";
+                throw new BitbucketApiError(`Invalid Bitbucket response [${response.status}]: ${message}`, {
+                    statusCode: response.status, method, path,
+                });
+            }
+        } catch (error) {
+            if (error instanceof BitbucketApiError) throw error;
+            const detail = error instanceof Error ? error.message : String(error);
+            const message = controller.signal.aborted
+                ? `Bitbucket request timed out after ${this.timeoutMs} ms. Check the server state before retrying a write operation.`
+                : response
+                    ? `Unable to read Bitbucket response [${response.status}]: ${detail}`
+                    : `Unable to connect to Bitbucket: ${detail}`;
+            throw new BitbucketApiError(message, { statusCode: response?.status, method, path });
+        } finally {
+            clearTimeout(timer);
         }
-
-        if (responseBody === undefined) {
-            return undefined as T;
-        }
-
-        return responseBody as T;
     }
 
 
@@ -194,6 +168,9 @@ async function readResponseBody(
     try {
         return JSON.parse(content);
     } catch {
+        if (response.ok) {
+            throw new Error("Expected a JSON response from Bitbucket.");
+        }
         return content;
     }
 }

@@ -256,6 +256,10 @@ Il pass-through `git` propaga l'exit code del processo Git. Le PR non trovate da
 
 La CLI ripristina la directory e svuota la cache del token anche nei percorsi di help ed errore. Le paginazioni con indici mancanti, non interi o che non avanzano vengono interrotte con errore.
 
+Ogni richiesta REST Bitbucket ha un timeout di 60 secondi, che copre anche la lettura del corpo della risposta. Il limite riguarda la singola richiesta, non l'intero comando. Gli errori conservano metodo, percorso e status HTTP quando disponibile. Non vengono eseguiti retry automatici: dopo un timeout durante creazione, merge o aggiornamento di un task, verificare lo stato sul server prima di ripetere l'operazione.
+
+Le risposte di successo devono contenere JSON valido, salvo i corpi vuoti consentiti dalle singole operazioni. I moduli REST verificano struttura delle pagine, repository, PR, reviewer, task e suggerimenti del messaggio di merge prima di utilizzarli. Una pagina HTML di login o una risposta incompleta produce un errore esplicito anziché un errore di accesso ai campi. Gli errori di JSON malformato non mostrano il contenuto ricevuto. Una risposta non valida dopo una scrittura non implica che il server abbia annullato l'operazione.
+
 ## Sviluppo e verifica
 
 ```powershell

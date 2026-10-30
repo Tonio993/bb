@@ -3,12 +3,11 @@ import {
 } from "./bitbucket-client.ts";
 
 import type {
-    BitbucketCommitMessageSuggestion,
-    BitbucketPage,
     BitbucketPullRequest,
     BitbucketPullRequestTask,
     BitbucketRepository,
 } from "./bitbucket-types.ts";
+import { parseCommitMessageSuggestion, parsePage, parsePullRequest, parseTask } from "./response-parsers.ts";
 
 import {
     getProjectRepositories,
@@ -73,9 +72,7 @@ export async function getOpenPullRequest(
             `?state=OPEN&start=${start}&limit=${limit}`;
 
         const response =
-            await client.get<
-                BitbucketPage<BitbucketPullRequest>
-            >(path);
+            await client.get(path, parsePage(parsePullRequest));
 
         const pullRequest =
             response.values.find(
@@ -178,9 +175,7 @@ async function getRepositoryOpenPullRequests(
             `?state=OPEN&start=${start}&limit=${limit}`;
 
         const response =
-            await client.get<
-                BitbucketPage<BitbucketPullRequest>
-            >(path);
+            await client.get(path, parsePage(parsePullRequest));
 
         const matches =
             response.values
@@ -319,9 +314,10 @@ export async function createPullRequest(
             ),
     };
 
-    return client.post<BitbucketPullRequest>(
+    return client.post(
         path,
         body,
+        parsePullRequest,
     );
 }
 
@@ -336,8 +332,9 @@ export async function getPullRequest(
     client: BitbucketClient,
     identity: PullRequestIdentity,
 ): Promise<BitbucketPullRequest> {
-    return client.get<BitbucketPullRequest>(
+    return client.get(
         getPullRequestPath(identity),
+        parsePullRequest,
     );
 }
 
@@ -381,7 +378,7 @@ export async function mergePullRequest(
 
     if (options.completeTasks) {
         await completePullRequestTasks(client, path);
-        currentPullRequest = await client.get<BitbucketPullRequest>(path);
+        currentPullRequest = await client.get(path, parsePullRequest);
 
         if (
             currentPullRequest.fromRef.id !== pullRequest.fromRef.id ||
@@ -404,17 +401,19 @@ export async function mergePullRequest(
     };
 
     if (options.messagePrefix?.trim()) {
-        const suggestion = await client.get<BitbucketCommitMessageSuggestion>(
+        const suggestion = await client.get(
             `${path}/commit-message-suggestion`,
+            parseCommitMessageSuggestion,
         );
 
         body.message = buildMergeCommitMessage(suggestion, options.messagePrefix);
         body.autoSubject = false;
     }
 
-    const mergedPullRequest = await client.post<BitbucketPullRequest>(
+    const mergedPullRequest = await client.post(
         `${path}/merge`,
         body,
+        parsePullRequest,
     );
 
     if (mergedPullRequest.state !== "MERGED") {
@@ -435,8 +434,9 @@ async function completePullRequestTasks(
 
     // Read all pages before updates so resolving tasks cannot shift the remaining pages.
     while (true) {
-        const page = await client.get<BitbucketPage<BitbucketPullRequestTask>>(
+        const page = await client.get(
             `${pullRequestPath}/blocker-comments?start=${start}&limit=100`,
+            parsePage(parseTask),
         );
         tasks.push(...page.values);
 
@@ -465,7 +465,7 @@ async function completePullRequestTasks(
         }
 
         const taskPath = `${pullRequestPath}/comments/${task.id}`;
-        const current = await client.get<BitbucketPullRequestTask>(taskPath);
+        const current = await client.get(taskPath, parseTask);
 
         if (current.state === "RESOLVED" || current.severity === "NORMAL") {
             continue;
@@ -478,10 +478,10 @@ async function completePullRequestTasks(
             throw new Error(`Bitbucket did not provide valid details for Pull Request task #${task.id}.`);
         }
 
-        const completed = await client.put<BitbucketPullRequestTask>(taskPath, {
+        const completed = await client.put(taskPath, {
             version: current.version,
             state: "RESOLVED",
-        });
+        }, parseTask);
 
         if (completed.state !== "RESOLVED") {
             throw new Error(`Bitbucket did not confirm completion of Pull Request task #${task.id}.`);
