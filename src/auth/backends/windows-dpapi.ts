@@ -20,7 +20,14 @@ export function createWindowsBackend(
         name,
         command: "powershell.exe",
         environment,
-        execute,
+        execute: (command, args, options) => {
+            // Windows PowerShell must not inherit incompatible PowerShell 7 module paths.
+            const childEnvironment = { ...options.env };
+            for (const key of Object.keys(childEnvironment)) {
+                if (key.toUpperCase() === "PSMODULEPATH") delete childEnvironment[key];
+            }
+            return execute(command, args, { ...options, env: childEnvironment });
+        },
         hint: "Ensure powershell.exe is available and use the Windows account that owns the token.",
         extraEnvironment: { BB_TOKEN_PATH: path },
     });

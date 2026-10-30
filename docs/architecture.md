@@ -144,6 +144,8 @@ La scrittura usa un temporaneo esclusivo nella stessa directory, chiusura e `ren
 
 Nessun fallback su file in chiaro. I backend inviano i secret tramite stdin, rimuovono `BB_TOKEN` dall'environment figlio e applicano timeout, limite di output e diagnostiche filtrate. Non inoltrare stderr nativo senza filtraggio. Lo store mantiene il token lazy in memoria per l'esecuzione e il bootstrap svuota la cache nel `finally`.
 
+Il backend Windows rimuove anche `PSModulePath` dall'environment figlio, senza modificare quello del chiamante. Quando `powershell.exe` viene avviato attraverso Node da PowerShell 7, può ereditare percorsi di moduli incompatibili; l'assenza della variabile permette a Windows PowerShell di ricostruire i propri percorsi standard, come descritto nella [documentazione Microsoft](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_psmodulepath#starting-windows-powershell-from-powershell-7). Il test DPAPI nativo include un modulo incompatibile simulato per verificare questo isolamento.
+
 `token set` usa input nascosto o `--stdin`, mai argomenti posizionali. `token status` mostra solo la sorgente e termina con codice 1 quando manca il token. Scrittura e cancellazione modificano lo store persistente, senza alterare `BB_TOKEN`.
 
 ## Trasporto Bitbucket

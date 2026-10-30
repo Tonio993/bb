@@ -52,6 +52,32 @@ for (const [platform, name] of [
     });
 }
 
+for (const key of ["PSModulePath", "PSMODULEPATH", "psmodulepath"]) {
+    test(`Windows PowerShell ignores inherited ${key} without changing the parent environment`, (t) => {
+        const { backend, execute, environment, homeDirectory } = fixture(t, "win32");
+        environment[key] = "incompatible-powershell-modules";
+        environment.BB_NATIVE_TEST_SETTING = "preserved";
+        const path = join(homeDirectory, "bb", "token.dat");
+        mkdirSync(dirname(path), { recursive: true });
+        writeFileSync(path, "encrypted-placeholder");
+
+        backend.read();
+        backend.write("saved-token");
+
+        for (const {
+            arguments: [, , options],
+        } of execute.mock.calls) {
+            assert.ok(
+                !Object.keys(options.env ?? {}).some((key) => key.toUpperCase() === "PSMODULEPATH"),
+            );
+            assert.equal(options.env?.BB_NATIVE_TEST_SETTING, "preserved");
+            assert.equal(options.env?.BB_TOKEN_PATH, path);
+            assert.equal(options.env?.BB_TOKEN, undefined);
+        }
+        assert.equal(environment[key], "incompatible-powershell-modules");
+    });
+}
+
 test("an unsupported platform still supports environment credentials without invoking storage", (t) => {
     const { backend, execute } = fixture(t, "aix");
     const store = new TokenStore(backend, { BB_TOKEN: "environment-token" });
@@ -231,7 +257,29 @@ test(
     },
     (t) => {
         const path = directory(t);
-        const environment = { ...process.env, APPDATA: path, BB_TOKEN: undefined };
+        // Simulate a PowerShell 7 module shadowing the Windows PowerShell security module.
+        const moduleRoot = join(path, "modules");
+        const modulePath = join(moduleRoot, "Microsoft.PowerShell.Security");
+        mkdirSync(modulePath, { recursive: true });
+        writeFileSync(
+            join(modulePath, "Microsoft.PowerShell.Security.psd1"),
+            `@{
+            RootModule = 'Microsoft.PowerShell.Security.psm1'
+            ModuleVersion = '1.0.0'
+            FunctionsToExport = @('ConvertTo-SecureString', 'ConvertFrom-SecureString')
+        }`,
+        );
+        writeFileSync(
+            join(modulePath, "Microsoft.PowerShell.Security.psm1"),
+            'throw "Incompatible PowerShell module fixture."',
+        );
+        const environment = {
+            ...process.env,
+            APPDATA: path,
+            BB_TOKEN: undefined,
+            PSModulePath:
+                moduleRoot + (process.env.PSModulePath ? `;${process.env.PSModulePath}` : ""),
+        };
         const store = new TokenStore(createTokenBackend({ environment }), environment);
         store.set("dpapi-test-token");
         assert.ok(
