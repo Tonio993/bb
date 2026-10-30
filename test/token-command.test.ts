@@ -8,7 +8,12 @@ import type { CommandContext } from "../src/cli/command-context.ts";
 
 function fixture(t: TestContext) {
     const environment = { BB_TOKEN: "private-environment-token" };
-    const tokenStore = new TokenStore({ platform: "linux", environment });
+    const tokenStore = new TokenStore({
+        name: "Test secure storage",
+        read(): never { throw new Error("Environment token must bypass storage."); },
+        write(): never { throw new Error("Token writes must be mocked."); },
+        delete(): never { throw new Error("Token deletion must be mocked."); },
+    }, environment);
     const output = t.mock.method(console, "log", () => {});
     const context: CommandContext = {
         tokenStore,

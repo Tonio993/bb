@@ -1,171 +1,132 @@
 import assert from "node:assert/strict";
-import childProcess from "node:child_process";
-import type { SpawnSyncOptions, SpawnSyncReturns } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { syncBuiltinESMExports } from "node:module";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { test } from "node:test";
 import type { TestContext } from "node:test";
+import type { TokenBackend } from "../src/auth/token-backend.ts";
 import { normalizeToken, TokenStore } from "../src/auth/token-store.ts";
 
-function mockNative(t: TestContext, result: Partial<SpawnSyncReturns<string>> = {}) {
-    const execute = t.mock.method(childProcess, "spawnSync", () => ({
-        pid: 1, output: [], stdout: "test-token", stderr: "", status: 0, signal: null, ...result,
-    }));
-    syncBuiltinESMExports();
-    t.after(() => { execute.mock.restore(); syncBuiltinESMExports(); });
-    return execute;
+function fixture(t: TestContext, environment: NodeJS.ProcessEnv = {}) {
+    let stored: string | undefined = "stored-token";
+    const read = t.mock.fn(() => stored);
+    const write = t.mock.fn((token: string) => { stored = token; });
+    const remove = t.mock.fn(() => { stored = undefined; });
+    const backend: TokenBackend = { name: "Test secure storage", read, write, delete: remove };
+    return {
+        store: new TokenStore(backend, environment), backend, environment, read, write, remove,
+        setStored: (token: string | undefined) => { stored = token; },
+    };
 }
 
-function directory(t: TestContext) {
-    const path = mkdtempSync(join(tmpdir(), "bb-token-test-"));
-    t.after(() => rmSync(path, { recursive: true, force: true }));
-    return path;
-}
-
-for (const platform of ["win32", "darwin", "linux", "aix"] as const) {
-    test(`BB_TOKEN works on ${platform} without invoking native storage`, (t) => {
-        const native = mockNative(t);
-        const store = new TokenStore({ platform, environment: { BB_TOKEN: " environment-token " } });
-        assert.equal(store.get(), "environment-token");
-        assert.equal(store.source(), "BB_TOKEN");
-        assert.equal(native.mock.callCount(), 0);
-    });
-}
+test("environment credentials bypass the backend for both reads and source inspection", (t) => {
+    const { store, read } = fixture(t, { BB_TOKEN: " environment-token " });
+    assert.equal(store.get(), "environment-token");
+    assert.equal(store.source(), "BB_TOKEN");
+    assert.equal(read.mock.callCount(), 0);
+});
 
 test("stored credentials are cached per instance and clearCache forces a fresh read", (t) => {
-    const native = mockNative(t);
-    const store = new TokenStore({ platform: "linux", environment: {} });
-    assert.equal(store.get(), "test-token");
-    assert.equal(store.get(), "test-token");
-    assert.equal(native.mock.callCount(), 1);
+    const { store, backend, read } = fixture(t);
+    assert.equal(store.get(), "stored-token");
+    assert.equal(store.get(), "stored-token");
+    assert.equal(read.mock.callCount(), 1);
     store.clearCache();
     store.get();
-    assert.equal(native.mock.callCount(), 2);
-    new TokenStore({ platform: "linux", environment: {} }).get();
-    assert.equal(native.mock.callCount(), 3);
+    assert.equal(read.mock.callCount(), 2);
+    new TokenStore(backend, {}).get();
+    assert.equal(read.mock.callCount(), 3);
 });
 
 test("an environment override takes priority even after a stored token has been cached", (t) => {
-    const native = mockNative(t);
-    const environment: NodeJS.ProcessEnv = {};
-    const store = new TokenStore({ platform: "linux", environment });
+    const { store, environment, read } = fixture(t);
     store.get();
     environment.BB_TOKEN = "new-override";
     assert.equal(store.get(), "new-override");
-    assert.equal(native.mock.callCount(), 1);
+    assert.equal(store.source(), "BB_TOKEN");
     environment.BB_TOKEN = " ";
     assert.throws(() => store.get(), /cannot be empty/);
+    assert.throws(() => store.source(), /cannot be empty/);
+    assert.equal(read.mock.callCount(), 1);
 });
 
-for (const [platform, status] of [["darwin", 44], ["linux", 1]] as const) {
-    test(`missing credentials on ${platform} explain how to configure a token`, (t) => {
-        mockNative(t, { status, stdout: "" });
-        const store = new TokenStore({ platform, environment: {} });
-        assert.equal(store.source(), undefined);
-        assert.throws(() => store.get(), /bb token set.*BB_TOKEN/);
-        assert.doesNotThrow(() => store.delete());
-    });
-}
-
-test("Linux storage uses secret-tool stdin and never puts secrets in arguments or environment", (t) => {
-    const native = mockNative(t);
-    const store = new TokenStore({ platform: "linux", environment: { BB_TOKEN: "existing-environment-token" } });
-    store.set("saved-token");
-    const [command, args, options] = native.mock.calls[0].arguments;
-    const spawnOptions = options as SpawnSyncOptions;
-    assert.equal(command, "secret-tool");
-    assert.deepEqual(args, ["store", "--label=bb Bitbucket token", "service", "bb.bitbucket", "account", "token"]);
-    assert.equal(spawnOptions.input, "saved-token");
-    assert.equal(spawnOptions.env?.BB_TOKEN, undefined);
-    assert.equal(spawnOptions.shell, false);
-    assert.equal(store.get(), "existing-environment-token");
+test("an empty environment override never falls back to stored credentials", (t) => {
+    const { store, read } = fixture(t, { BB_TOKEN: "" });
+    assert.throws(() => store.get(), /cannot be empty/);
+    assert.throws(() => store.source(), /cannot be empty/);
+    assert.equal(read.mock.callCount(), 0);
 });
 
-test("macOS writes a single escaped command via stdin, preserving its failure status", (t) => {
-    const native = mockNative(t);
-    const token = 'quote"and\\backslash;$()';
-    new TokenStore({ platform: "darwin", environment: {} }).set(token);
-    const [command, args, options] = native.mock.calls[0].arguments;
-    assert.equal(command, "/usr/bin/security");
-    assert.deepEqual(args, ["-i"]);
-    assert.equal((options as SpawnSyncOptions).input,
-        'add-generic-password -U -s bb.bitbucket -a token -w "quote\\"and\\\\backslash;$()"\n');
+test("missing credentials explain how to configure a token", (t) => {
+    const { store, setStored } = fixture(t);
+    setStored(undefined);
+    assert.equal(store.source(), undefined);
+    assert.throws(() => store.get(), /bb token set.*BB_TOKEN/);
 });
 
-test("Windows keeps the existing token.dat path and DPAPI format", (t) => {
-    const path = directory(t);
-    mkdirSync(join(path, "bb"));
-    writeFileSync(join(path, "bb", "token.dat"), "encrypted-placeholder");
-    const native = mockNative(t);
-    const store = new TokenStore({ platform: "win32", environment: { APPDATA: path } });
-    assert.equal(store.get(), "test-token");
-    const [command, args, options] = native.mock.calls[0].arguments;
-    assert.equal(command, "powershell.exe");
-    assert.ok(args?.includes("-NonInteractive"));
-    assert.ok(args?.some((arg) => arg.includes("ConvertTo-SecureString")));
-    assert.equal((options as SpawnSyncOptions).env?.BB_TOKEN_PATH, join(path, "bb", "token.dat"));
-    store.set("replacement-token");
-    assert.equal((native.mock.calls[1].arguments[2] as SpawnSyncOptions).input, "replacement-token");
-    assert.ok(!native.mock.calls[1].arguments[1]?.includes("replacement-token"));
-    store.delete();
-    assert.equal(existsSync(join(path, "bb", "token.dat")), false);
-    assert.throws(() => store.get(), /not configured/);
-});
-
-for (const platform of ["darwin", "linux"] as const) {
-    test(`native ${platform} errors are actionable and do not expose tool diagnostics`, (t) => {
-        mockNative(t, { status: 1, stderr: "sensitive-secret-from-tool", stdout: "sensitive-secret-from-tool" });
-        const store = new TokenStore({ platform, environment: {} });
-        assert.throws(() => store.set("sensitive-secret-from-tool"), (error: unknown) => {
-            assert.ok(error instanceof Error);
-            assert.match(error.message, /token operation failed/);
-            assert.ok(!error.message.includes("sensitive-secret-from-tool"));
-            assert.match(error.message, /BB_TOKEN/);
-            return true;
-        });
-    });
-}
-
-test("a missing secret-tool executable reports the required dependency", (t) => {
-    mockNative(t, { error: new Error("spawn ENOENT"), status: null });
-    assert.throws(() => new TokenStore({ platform: "linux", environment: {} }).get(), /Install secret-tool/);
-});
-
-test("invalid and oversized tokens are rejected before persistence", (t) => {
-    const native = mockNative(t);
-    const store = new TokenStore({ platform: "linux", environment: {} });
-    for (const token of ["", " ", "one\ntwo", "one\rtwo", "one\0two", "one\x85two", "one two", "x".repeat(1025)]) {
-        assert.throws(() => store.set(token), /Bitbucket token/);
-    }
-    assert.equal(native.mock.callCount(), 0);
-    assert.equal(normalizeToken("token\r\n"), "token");
+test("source inspection validates storage without populating or replacing the read cache", (t) => {
+    const { store, read, setStored } = fixture(t);
+    assert.equal(store.get(), "stored-token");
+    setStored("replacement-token");
+    assert.equal(store.source(), "Test secure storage");
+    assert.equal(store.get(), "stored-token");
+    assert.equal(read.mock.callCount(), 2);
+    store.clearCache();
+    assert.equal(store.get(), "replacement-token");
 });
 
 test("setting and deleting credentials invalidate a previously cached token", (t) => {
-    const native = mockNative(t);
-    const store = new TokenStore({ platform: "linux", environment: {} });
-    assert.equal(store.get(), "test-token");
-    store.set("replacement-token");
+    const { store, write, remove, read } = fixture(t);
     store.get();
-    assert.equal(native.mock.callCount(), 3);
+    store.set(" replacement-token\r\n");
+    assert.equal(store.get(), "replacement-token");
+    assert.deepEqual(write.mock.calls[0].arguments, ["replacement-token"]);
     store.delete();
-    native.mock.mockImplementation(() => ({
-        pid: 1, output: [], stdout: "", stderr: "", status: 1, signal: null,
-    }));
+    assert.equal(remove.mock.callCount(), 1);
     assert.throws(() => store.get(), /not configured/);
+    assert.equal(read.mock.callCount(), 3);
 });
 
-test("Windows DPAPI round trip uses isolated storage and never writes plaintext", {
-    skip: process.platform !== "win32" || process.env.BB_TEST_NATIVE_TOKEN_STORE !== "1",
-}, (t) => {
-    const path = directory(t);
-    const store = new TokenStore({ environment: { ...process.env, APPDATA: path, BB_TOKEN: undefined } });
-    store.set("dpapi-test-token");
-    assert.ok(!readFileSync(join(path, "bb", "token.dat"), "utf8").includes("dpapi-test-token"));
-    assert.equal(store.get(), "dpapi-test-token");
-    assert.equal(store.source(), "Windows DPAPI");
+test("persistent updates do not modify the environment override", (t) => {
+    const { store, environment, read } = fixture(t, { BB_TOKEN: "environment-token" });
+    store.set("stored-replacement");
     store.delete();
-    assert.equal(store.source(), undefined);
+    assert.equal(environment.BB_TOKEN, "environment-token");
+    assert.equal(store.get(), "environment-token");
+    assert.equal(read.mock.callCount(), 0);
 });
+
+test("invalid tokens are rejected before writing or clearing a valid cache", (t) => {
+    const { store, write, read } = fixture(t);
+    store.get();
+    for (const token of ["", " ", "one\ntwo", "one\rtwo", "one\0two", "one\x85two", "one two", "x".repeat(1025)]) {
+        assert.throws(() => store.set(token), /Bitbucket token/);
+    }
+    assert.equal(store.get(), "stored-token");
+    assert.equal(read.mock.callCount(), 1);
+    assert.equal(write.mock.callCount(), 0);
+    assert.equal(normalizeToken("token\r\n"), "token");
+    assert.equal(normalizeToken("é".repeat(512)).length, 512);
+    assert.throws(() => normalizeToken("é".repeat(513)), /1024 bytes/);
+});
+
+test("invalid backend credentials are validated and never cached", (t) => {
+    const { store, setStored, read } = fixture(t);
+    setStored("invalid token");
+    assert.throws(() => store.get(), /whitespace/);
+    assert.throws(() => store.source(), /whitespace/);
+    setStored("fixed-token");
+    assert.equal(store.get(), "fixed-token");
+    assert.equal(read.mock.callCount(), 3);
+});
+
+for (const operation of ["set", "delete"] as const) {
+    test(`a failed ${operation} still invalidates the read cache`, (t) => {
+        const { store, setStored, write, remove, read } = fixture(t);
+        store.get();
+        const fail = () => { throw new Error("Storage unavailable."); };
+        if (operation === "set") write.mock.mockImplementation(fail);
+        else remove.mock.mockImplementation(fail);
+        assert.throws(() => operation === "set" ? store.set("new-token") : store.delete(), /Storage unavailable/);
+        setStored("current-token");
+        assert.equal(store.get(), "current-token");
+        assert.equal(read.mock.callCount(), 2);
+    });
+}

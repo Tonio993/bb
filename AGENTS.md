@@ -143,6 +143,8 @@ src/
 │
 ├── auth/
 │   ├── token-input.ts
+│   ├── token-backend.ts
+│   ├── token-backends.ts
 │   └── token-store.ts
 │
 ├── bitbucket/
@@ -500,6 +502,10 @@ Configuration missing.
 Il token Bitbucket è un secret e non deve essere salvato dentro `config.json`.
 
 `TokenStore` è creato nel composition root e passato ai comandi tramite `CommandContext`. I client Git e Bitbucket ricevono un provider esplicito che legge dallo stesso store, senza cache globali implicite.
+
+`TokenStore` riceve un `TokenBackend` esplicito con nome, lettura, scrittura e cancellazione. Gestisce soltanto precedenza di `BB_TOKEN`, validazione e cache, senza importare filesystem, processi o logica di piattaforma. Il bootstrap seleziona il backend tramite `createTokenBackend` in `auth/token-backends.ts`; la selezione non legge credenziali e non esegue comandi. Su piattaforme non supportate `BB_TOKEN` deve continuare a funzionare.
+
+I tre backend incapsulano i rispettivi protocolli e condividono l'esecuzione sicura dei comandi: stdin per i secret, environment figlio senza `BB_TOKEN`, timeout, limite di output e diagnostiche filtrate. I test dello store usano backend fittizi; i test dei protocolli iniettano un esecutore sostituibile senza modificare `spawnSync` globale. Il test DPAPI opzionale risiede in `test/token-backends.test.ts`.
 
 Priorità di lettura:
 

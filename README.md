@@ -271,11 +271,11 @@ I test usano il runner nativo Node, client sostituibili e risposte HTTP simulate
 
 La verifica del pacchetto installabile è separata e si avvia con `npm run test:package`.
 
-I backend macOS e Linux e gli errori dei tool nativi sono verificati tramite simulazioni. Il test reale DPAPI su Windows è opzionale, usa una directory temporanea e un token fittizio e può essere abilitato così:
+I test di `TokenStore` usano backend fittizi per verificare precedenza delle credenziali, validazione e cache. I backend macOS e Linux e gli errori dei tool nativi sono verificati tramite un esecutore simulato, senza sostituire funzioni globali di Node. Il test reale DPAPI su Windows è opzionale, usa una directory temporanea e un token fittizio e può essere abilitato così:
 
 ```powershell
 $env:BB_TEST_NATIVE_TOKEN_STORE = "1"
-node --test test/token-store.test.ts
+node --test test/token-backends.test.ts
 Remove-Item Env:BB_TEST_NATIVE_TOKEN_STORE
 ```
 

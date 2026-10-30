@@ -10,6 +10,7 @@ import {
 import {
     TokenStore,
 } from "./auth/token-store.ts";
+import { createTokenBackend } from "./auth/token-backends.ts";
 
 import {
     runCli,
@@ -31,7 +32,7 @@ import {
 const configStore =
     new ConfigStore();
 
-const tokenStore = new TokenStore();
+const tokenStore = new TokenStore(createTokenBackend());
 
 
 let cachedConfig:
