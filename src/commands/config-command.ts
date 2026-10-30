@@ -25,14 +25,14 @@ export function registerConfigCommand(
     program: Command,
     context: CommandContext,
 ): void {
-    program
+    const command = program
         .command("config")
         .description(
             "View and modify the global bb configuration.",
         )
         .argument(
             "[key]",
-            "Configuration key, 'list', or 'init'",
+            "Configuration key",
         )
         .argument(
             "[value]",
@@ -58,19 +58,8 @@ Examples:
                 key: string | undefined,
                 value: string | undefined,
             ) => {
-                if (
-                    !key ||
-                    key === "list"
-                ) {
+                if (!key) {
                     showConfiguration(
-                        context,
-                    );
-
-                    return;
-                }
-
-                if (key === "init") {
-                    await initializeConfiguration(
                         context,
                     );
 
@@ -113,6 +102,16 @@ Examples:
                 );
             },
         );
+
+    command
+        .command("list")
+        .description("List the global bb configuration.")
+        .action(() => showConfiguration(context));
+
+    command
+        .command("init")
+        .description("Configure global bb settings interactively.")
+        .action(async () => initializeConfiguration(context));
 }
 
 

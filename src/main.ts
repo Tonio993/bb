@@ -1,4 +1,8 @@
 import {
+    CommanderError,
+} from "commander";
+
+import {
     BitbucketClient,
 } from "./bitbucket/bitbucket-client.ts";
 
@@ -84,16 +88,20 @@ try {
         context,
     );
 } catch (error) {
-    const message =
-        error instanceof Error
-            ? error.message
-            : String(error);
+    if (error instanceof CommanderError) {
+        process.exitCode = error.exitCode;
+    } else {
+        const message =
+            error instanceof Error
+                ? error.message
+                : String(error);
 
-    console.error(
-        `Error: ${message}`,
-    );
+        console.error(
+            `Error: ${message}`,
+        );
 
-    process.exitCode = 1;
+        process.exitCode = 1;
+    }
 } finally {
     clearBitbucketTokenCache();
 }

@@ -1,5 +1,6 @@
 import {
     Command,
+    CommanderError,
 } from "commander";
 
 import type {
@@ -27,6 +28,7 @@ export async function runCli(
 
     program
         .name("bb")
+        .exitOverride()
         .description(
             "Bitbucket command-line helper.",
         )
@@ -54,7 +56,7 @@ export async function runCli(
                     path?: string;
                 };
 
-            if (!options.path) {
+            if (options.path === undefined) {
                 return;
             }
 
@@ -68,9 +70,13 @@ export async function runCli(
 
                 workingDirectoryChanged =
                     true;
-            } catch {
+            } catch (error) {
+                const message = error instanceof Error
+                    ? error.message
+                    : String(error);
+
                 throw new Error(
-                    `Directory '${options.path}' not found.`,
+                    `Unable to use directory '${options.path}': ${message}`,
                 );
             }
         },
@@ -84,6 +90,10 @@ export async function runCli(
                 from: "user",
             },
         );
+    } catch (error) {
+        if (!(error instanceof CommanderError) || error.exitCode !== 0) {
+            throw error;
+        }
     } finally {
         if (
             workingDirectoryChanged &&
