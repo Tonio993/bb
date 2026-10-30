@@ -187,7 +187,9 @@ node src/main.ts git -C "C:\work\payments" status
 
 Gli argomenti dopo `git` vengono inoltrati al processo Git. In particolare, `git -C` è un'opzione di Git e non cambia la directory del processo `bb`. È possibile combinarla con l'opzione globale `-C`.
 
-Il token Bitbucket viene aggiunto automaticamente per i comandi diretti `fetch`, `pull`, `push`, `clone` e `ls-remote`. Comandi locali come `status`, `log` e `branch` non lo richiedono. Il token passa nell'environment temporaneo del processo figlio tramite `GIT_CONFIG_*`; non viene inserito nella command line.
+Il token Bitbucket viene aggiunto automaticamente per i comandi diretti `fetch`, `pull`, `push`, `clone` e `ls-remote`. Comandi locali come `status`, `log` e `branch` non richiedono token né `bitbucket.url`. Il token passa nell'environment temporaneo del processo figlio tramite `GIT_CONFIG_*`; non viene inserito nella command line. L'header usa `http.<url>.extraHeader`, limitato all'URL e al context path di `bitbucket.url`, e non viene applicato a server o percorsi esterni. Le operazioni remote richiedono quindi `bitbucket.url`, ma non `bitbucket.projectKey`. L'autenticazione nativa di Git rimane disponibile per gli altri server.
+
+Le impostazioni `GIT_CONFIG_*` attive ereditate vengono preservate. Un `GIT_CONFIG_COUNT` non valido interrompe l'aggiunta delle credenziali con un errore esplicito. Le operazioni interne acquisiscono al massimo 16 MiB di output per comando e segnalano il superamento del limite; il pass-through mantiene stdout, stderr e stdin del terminale. I controlli dei branch distinguono l'assenza del riferimento dagli errori Git. Le terminazioni tramite segnale producono un errore esplicito.
 
 Il riconoscimento automatico non espande gli alias Git e non copre altri sottocomandi remoti, come `remote update` o `submodule update`. In questi casi rimane disponibile l'autenticazione gestita direttamente da Git.
 

@@ -667,6 +667,8 @@ gitClient.assertRemoteBranchExists(...)
 gitClient.commitsBetween(...)
 ```
 
+Centralizzare l'esecuzione dei processi e la gestione degli errori in `GitClient`, mantenendo output ereditato per il pass-through e acquisito per le operazioni interne. L'acquisizione ha un limite esplicito di 16 MiB. I controlli `show-ref --verify --quiet` trattano soltanto exit code `1` come riferimento assente; gli altri errori e le terminazioni tramite segnale devono essere propagati come `GitCommandError`.
+
 ---
 
 # Git locale vs remoto
@@ -722,11 +724,13 @@ GIT_CONFIG_VALUE_n
 con:
 
 ```text
-http.extraHeader
+http.<bitbucket.url>.extraHeader
 Authorization: Bearer TOKEN
 ```
 
-Preservare eventuali `GIT_CONFIG_*` già presenti.
+Limitare l'header all'URL e al context path Bitbucket configurato, normalizzando il prefisso con slash finale. Non applicare l'header ad altri server o percorsi. La lettura di `bitbucket.url` è lazy e indipendente da `bitbucket.projectKey`: i comandi locali non devono richiedere nessuno dei due valori. Non accettare URL con credenziali, wildcard, query o fragment per l'autenticazione Git.
+
+Preservare eventuali `GIT_CONFIG_*` attivi già presenti. Validare rigorosamente `GIT_CONFIG_COUNT` come intero decimale non negativo incrementabile senza perdita di precisione; non reinterpretare valori non validi come zero.
 
 Le variabili devono esistere solo nell'environment del processo figlio.
 
@@ -740,6 +744,7 @@ Gli errori Git strutturati devono poter conservare:
 exitCode
 args
 message
+signal, quando il processo è terminato tramite segnale
 ```
 
 Il comando pubblico:

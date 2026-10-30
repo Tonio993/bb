@@ -168,7 +168,7 @@ for (const nextPageStart of [undefined, 0, -1, 0.5]) {
 }
 
 function createContext(t: TestContext, client: BitbucketClient, projectWide: boolean): CommandContext {
-    const git = new GitClient("origin", () => { throw new Error("Discovery must not request a Git token."); });
+    const git = new GitClient("origin", () => { throw new Error("Discovery must not request a Git token."); }, () => config.bitbucket.url);
     t.mock.method(git, "currentRepository", () => "payments");
     t.mock.method(git, "currentBranch", () => { throw new Error("Both branches are already known."); });
     return {

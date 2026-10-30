@@ -108,7 +108,7 @@ for (const option of ["-C", "--path"]) {
     test(`global ${option} changes the action directory and restores it after success`, async (t) => {
         const directory = createDirectory(t);
         const originalDirectory = process.cwd();
-        const git = new GitClient("origin", () => { throw new Error("Git must be mocked."); });
+        const git = new GitClient("origin", () => { throw new Error("Git must be mocked."); }, () => { throw new Error("Git must be mocked."); });
         let actionDirectory: string | undefined;
         const run = t.mock.method(git, "run", () => {
             actionDirectory = process.cwd();
@@ -124,7 +124,7 @@ for (const option of ["-C", "--path"]) {
 test("global -C and Git -C are applied independently", async (t) => {
     const directory = createDirectory(t);
     const originalDirectory = process.cwd();
-    const git = new GitClient("origin", () => { throw new Error("Git must be mocked."); });
+    const git = new GitClient("origin", () => { throw new Error("Git must be mocked."); }, () => { throw new Error("Git must be mocked."); });
     let actionDirectory: string | undefined;
     const run = t.mock.method(git, "run", () => {
         actionDirectory = process.cwd();
@@ -138,7 +138,7 @@ test("global -C and Git -C are applied independently", async (t) => {
 
 test("Git -C alone is forwarded without changing the bb process directory", async (t) => {
     const originalDirectory = process.cwd();
-    const git = new GitClient("origin", () => { throw new Error("Git must be mocked."); });
+    const git = new GitClient("origin", () => { throw new Error("Git must be mocked."); }, () => { throw new Error("Git must be mocked."); });
     let actionDirectory: string | undefined;
     const run = t.mock.method(git, "run", () => {
         actionDirectory = process.cwd();

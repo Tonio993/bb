@@ -73,7 +73,7 @@ test("reviewers use defaults, explicit overrides, or no reviewers", () => {
 function contentFixture(t: TestContext, commits: GitCommit[]) {
     const git = new GitClient("upstream", () => {
         throw new Error("Reading commit content must not request a token.");
-    });
+    }, () => { throw new Error("Reading commit content must not read the Bitbucket URL."); });
     const readCommits = t.mock.method(git, "commitsBetween", () => commits);
     return {
         readCommits,

@@ -13,6 +13,15 @@ import {
 type TokenProvider =
     () => string;
 
+type BitbucketUrlProvider = () => string | undefined;
+
+type GitExecutionResult = {
+    exitCode: number;
+    stdout: string;
+    stderr: string;
+};
+
+const maxCaptureBytes = 16 * 1024 * 1024;
 
 export type GitRunOptions = {
     authenticated?: boolean;
@@ -27,14 +36,17 @@ export class GitClient {
     readonly remote: string;
 
     private readonly tokenProvider: TokenProvider;
+    private readonly bitbucketUrlProvider: BitbucketUrlProvider;
 
 
     constructor(
         remote: string,
         tokenProvider: TokenProvider,
+        bitbucketUrlProvider: BitbucketUrlProvider,
     ) {
         this.remote = remote;
         this.tokenProvider = tokenProvider;
+        this.bitbucketUrlProvider = bitbucketUrlProvider;
     }
 
 
@@ -42,30 +54,11 @@ export class GitClient {
         args: string[],
         options: GitRunOptions = {},
     ): number {
-        const result =
-            spawnSync(
-                "git",
-                args,
-                {
-                    stdio: "inherit",
-                    shell: false,
-                    windowsHide: true,
-                    env: this.createEnvironment(
-                        options.authenticated ?? requiresAuthentication(args),
-                    ),
-                },
-            );
-
-            if (result.error) {
-                throw new GitCommandError(
-                    `Unable to execute Git: ${result.error.message}`,
-                    {
-                        args,
-                    },
-                );
-            }
-
-        return result.status ?? 1;
+        return this.execute(
+            args,
+            options.authenticated ?? requiresAuthentication(args),
+            "inherit",
+        ).exitCode;
     }
 
 
@@ -121,12 +114,12 @@ export class GitClient {
     localBranchExists(
         branch: string,
     ): boolean {
-        return this.exitCode([
+        return this.branchExists([
             "show-ref",
             "--verify",
             "--quiet",
             `refs/heads/${branch}`,
-        ]) === 0;
+        ]);
     }
 
 
@@ -134,12 +127,12 @@ export class GitClient {
         branch: string,
         remote: string = this.remote,
     ): boolean {
-        return this.exitCode([
+        return this.branchExists([
             "show-ref",
             "--verify",
             "--quiet",
             `refs/remotes/${remote}/${branch}`,
-        ]) === 0;
+        ]);
     }
 
 
@@ -147,72 +140,71 @@ export class GitClient {
         args: string[],
         authenticated = false,
     ): string {
-        const result =
-            spawnSync(
-                "git",
-                args,
-                {
-                    encoding: "utf8",
-                    shell: false,
-                    windowsHide: true,
-                    env: this.createEnvironment(
-                        authenticated,
-                    ),
-                },
-            );
-
-            if (result.error) {
-                throw new GitCommandError(
-                    `Unable to execute Git: ${result.error.message}`,
-                    {
-                        args,
-                    },
-                );
-            }
-
-            if (result.status !== 0) {
-                const message =
-                    result.stderr?.trim() ||
-                    `Git command failed with exit code ${result.status}.`;
-
-                throw new GitCommandError(
-                    message,
-                    {
-                        exitCode:
-                            result.status ?? undefined,
-                        args,
-                    },
-                );
-            }
-
+        const result = this.execute(args, authenticated);
+        this.assertExitCode(result, args);
         return result.stdout.trim();
     }
 
 
-    private exitCode(
+    private branchExists(
         args: string[],
-    ): number {
-        const result =
-            spawnSync(
-                "git",
+    ): boolean {
+        const result = this.execute(args);
+        this.assertExitCode(result, args, [0, 1]);
+        return result.exitCode === 0;
+    }
+
+    private execute(
+        args: string[],
+        authenticated = false,
+        stdio: "inherit" | "pipe" = "pipe",
+    ): GitExecutionResult {
+        const result = spawnSync("git", args, {
+            encoding: "utf8",
+            stdio,
+            shell: false,
+            windowsHide: true,
+            maxBuffer: maxCaptureBytes,
+            env: this.createEnvironment(authenticated),
+        });
+
+        if (result.error) {
+            const code = (result.error as NodeJS.ErrnoException).code;
+            const message = code === "ENOBUFS"
+                ? "Git output exceeded the 16 MiB capture limit. Narrow the commit range or reduce the command output."
+                : `Unable to execute Git: ${result.error.message}`;
+            throw new GitCommandError(message, { args, signal: result.signal ?? undefined });
+        }
+
+        if (result.signal) {
+            throw new GitCommandError(`Git was terminated by signal ${result.signal}.`, {
                 args,
-                {
-                    stdio: "ignore",
-                    shell: false,
-                    windowsHide: true,
-                },
+                signal: result.signal,
+            });
+        }
+
+        if (result.status === null) {
+            throw new GitCommandError("Git terminated without an exit code.", { args });
+        }
+
+        return {
+            exitCode: result.status,
+            stdout: result.stdout?.toString() ?? "",
+            stderr: result.stderr?.toString() ?? "",
+        };
+    }
+
+    private assertExitCode(
+        result: GitExecutionResult,
+        args: string[],
+        allowed: readonly number[] = [0],
+    ): void {
+        if (!allowed.includes(result.exitCode)) {
+            throw new GitCommandError(
+                result.stderr.trim() || `Git command failed with exit code ${result.exitCode}.`,
+                { args, exitCode: result.exitCode },
             );
-
-            if (result.error) {
-                throw new GitCommandError(
-                    `Unable to execute Git: ${result.error.message}`,
-                    {
-                        args,
-                    },
-                );
-            }
-
-        return result.status ?? 1;
+        }
     }
 
 
@@ -232,12 +224,14 @@ export class GitClient {
                 environment.GIT_CONFIG_COUNT,
             );
 
+        const authenticationKey = getAuthenticationKey(this.bitbucketUrlProvider());
+
         environment.GIT_CONFIG_COUNT =
             String(configCount + 1);
 
         environment[
             `GIT_CONFIG_KEY_${configCount}`
-        ] = "http.extraHeader";
+        ] = authenticationKey;
 
         environment[
             `GIT_CONFIG_VALUE_${configCount}`
@@ -393,22 +387,45 @@ function requiresAuthentication(
 function getGitConfigCount(
     value: string | undefined,
 ): number {
-    if (!value) {
+    if (value === undefined) {
         return 0;
     }
 
-    const count =
-        Number.parseInt(
-            value,
-            10,
-        );
+    const count = Number(value);
 
     if (
-        !Number.isInteger(count) ||
-        count < 0
+        !/^\d+$/.test(value) ||
+        !Number.isSafeInteger(count + 1)
     ) {
-        return 0;
+        throw new Error("Invalid GIT_CONFIG_COUNT. Expected a non-negative decimal integer with room for one additional entry.");
     }
 
     return count;
+}
+
+function getAuthenticationKey(value: string | undefined): string {
+    if (!value?.trim()) {
+        throw new Error(
+            "Required configuration 'bitbucket.url' is missing.\n\n" +
+            'Configure it with:\n  bb config bitbucket.url "https://bitbucket.company.com"\n\n' +
+            "Or run:\n  bb config init",
+        );
+    }
+
+    let url: URL;
+    try {
+        url = new URL(value.trim());
+    } catch {
+        throw new Error("Invalid Bitbucket URL. Configure an absolute HTTP or HTTPS URL with 'bb config bitbucket.url'.");
+    }
+
+    if (
+        !["http:", "https:"].includes(url.protocol) || !url.hostname ||
+        url.hostname.includes("*") || url.username || url.password || url.search || url.hash
+    ) {
+        throw new Error("Invalid Bitbucket URL for Git authentication. Use an HTTP or HTTPS URL without credentials, wildcards, query parameters, or fragments.");
+    }
+
+    url.pathname = url.pathname.replace(/\/+$/, "") + "/";
+    return `http.${url.href}.extraHeader`;
 }

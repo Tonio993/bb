@@ -80,6 +80,10 @@ const context: CommandContext = {
                     ? remote
                     : "origin",
                 () => tokenStore.get(),
+                () => {
+                    const url = configStore.get("bitbucket.url");
+                    return typeof url === "string" ? url : undefined;
+                },
             );
         }
 

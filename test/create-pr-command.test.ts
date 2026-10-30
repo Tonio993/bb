@@ -22,7 +22,7 @@ function createFixture(t: TestContext) {
         git: { remote: "upstream" },
     };
     const events: string[] = [];
-    const git = new GitClient("upstream", () => { throw new Error("Git must be mocked."); });
+    const git = new GitClient("upstream", () => { throw new Error("Git must be mocked."); }, () => config.bitbucket.url);
     const currentBranch = t.mock.method(git, "currentBranch", () => "feature/current");
     const currentRepository = t.mock.method(git, "currentRepository", () => "payments");
     const fetch = t.mock.method(git, "fetch", () => { events.push("fetch"); });

@@ -89,7 +89,7 @@ function createFixture(t: TestContext) {
         }
         throw new Error(`Unexpected REST request: ${method} ${path}`);
     });
-    const git = new GitClient("origin", () => { throw new Error("Remote Git must not be used for merging."); });
+    const git = new GitClient("origin", () => { throw new Error("Remote Git must not be used for merging."); }, () => config.bitbucket.url);
     const currentBranch = t.mock.method(git, "currentBranch", () => "feature/current");
     const currentRepository = t.mock.method(git, "currentRepository", () => "payments");
     const runGit = t.mock.method(git, "run", () => { throw new Error("Merging must use REST."); });

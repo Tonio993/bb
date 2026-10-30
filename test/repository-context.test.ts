@@ -12,7 +12,7 @@ function createFixture(t: TestContext) {
         bitbucket: { url: "https://bitbucket.example", projectKey: " PROJECT ", defaultReviewers: [] },
         git: { remote: "origin" },
     };
-    const git = new GitClient("origin", () => { throw new Error("Repository discovery must not request a token."); });
+    const git = new GitClient("origin", () => { throw new Error("Repository discovery must not request a token."); }, () => config.bitbucket.url);
     const currentRepository = t.mock.method(git, "currentRepository", () => "payments");
     return { config, git, currentRepository };
 }
