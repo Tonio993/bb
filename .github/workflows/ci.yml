@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Node 24 / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Check formatting
+        run: npm run format:check
+      - name: Check types
+        run: npm run typecheck
+      - name: Run offline tests
+        run: npm test
+      - name: Check native Windows token storage
+        if: runner.os == 'Windows'
+        run: node --test --test-name-pattern="Windows DPAPI round trip" test/token-backends.test.ts
+        env:
+          BB_TEST_NATIVE_TOKEN_STORE: "1"
+      - name: Check installable package
+        run: npm run test:package
