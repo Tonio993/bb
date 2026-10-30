@@ -27,8 +27,9 @@ Privilegiare leggibilità, semplicità, riutilizzabilità, testabilità, basso b
 - Riutilizzare le astrazioni esistenti ed evitare duplicazioni.
 - Preferire composizione e dipendenze esplicite; non introdurre container DI, globali applicative o classi di servizio senza una necessità concreta.
 - Creare moduli soltanto per funzionalità reali, senza directory o file vuoti anticipati.
+- Organizzare i moduli per responsabilità e i test per area, seguendo la mappa in `docs/architecture.md`. Separare i tipi condivisi dai dettagli di implementazione; mantenere locali i tipi e gli helper privati. Aggiornare import, percorsi dei test e documentazione quando si sposta un modulo.
 - Non effettuare refactoring estesi estranei alla richiesta. Segnalare prima i miglioramenti architetturali significativi non necessari.
-- Mantenere `main.ts` come composition root e i registrar dei comandi in `commands/index.ts`.
+- Mantenere `main.ts` come composition root e i registrar dei comandi in `cli/commands/index.ts`.
 - Delegare parsing, routing e help a Commander; non introdurre parser manuali o switch sui nomi dei comandi.
 - Passare le dipendenze tramite `CommandContext`, usando contratti strutturali con i soli metodi necessari.
 - Tutto l'HTTP Bitbucket passa da `BitbucketClient`; tutte le operazioni Git passano da `GitClient`.

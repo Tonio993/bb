@@ -4,24 +4,109 @@ Questo documento descrive responsabilità e invarianti dell'implementazione Node
 
 ## Responsabilità dei moduli
 
-| Area               | Responsabilità                                                                  |
-| ------------------ | ------------------------------------------------------------------------------- |
-| `src/main.ts`      | Composition root: store, client, contesto lazy, CLI, errore finale e cleanup.   |
-| `src/cli/`         | Parsing Commander, directory temporanea globale e contratti delle dipendenze.   |
-| `src/commands/`    | Registrar dei comandi, opzioni, risoluzione degli input e output.               |
-| `src/application/` | Orchestrazione del merge, senza URL REST, parsing HTTP, Commander o Git.        |
-| `src/bitbucket/`   | Trasporto HTTP, parser delle response, paginazione e operazioni REST.           |
-| `src/git/`         | Esecuzione Git, autenticazione selettiva ed errori strutturati.                 |
-| `src/auth/`        | Input del token, store e backend sicuri di piattaforma.                         |
-| `src/config/`      | Configurazione globale, validazione condivisa e persistenza atomica.            |
-| `src/repository/`  | Risoluzione centralizzata di project key e repository.                          |
-| `src/pullrequest/` | Regole pure per branch, reviewer, contenuto, messaggio e validazione del merge. |
+| Area                | Responsabilità                                                                  |
+| ------------------- | ------------------------------------------------------------------------------- |
+| `src/main.ts`       | Composition root: store, client, contesto lazy, CLI, errore finale e cleanup.   |
+| `src/cli/`          | Parsing Commander, directory temporanea globale, contratti e input del token.   |
+| `src/cli/commands/` | Registrar dei comandi, opzioni, risoluzione degli input e output.               |
+| `src/application/`  | Orchestrazione del merge, senza URL REST, parsing HTTP, Commander o Git.        |
+| `src/bitbucket/`    | Trasporto HTTP, parser delle response, paginazione e operazioni REST.           |
+| `src/git/`          | Esecuzione Git, autenticazione selettiva ed errori strutturati.                 |
+| `src/auth/`         | Store del token, selezione e implementazioni dei backend sicuri.                |
+| `src/config/`       | Configurazione globale, validazione condivisa e persistenza atomica.            |
+| `src/repository/`   | Risoluzione centralizzata di project key e repository.                          |
+| `src/pull-request/` | Regole pure per branch, reviewer, contenuto, messaggio e validazione del merge. |
+
+## Mappa dei file
+
+```text
+src/
+  main.ts
+  cli/
+    cli.ts
+    command-context.ts
+    token-input.ts
+    commands/
+      index.ts
+      config-command.ts
+      token-command.ts
+      git-command.ts
+      get-pr-url-command.ts
+      get-pr-urls-command.ts
+      create-pr-command.ts
+      merge-pr-command.ts
+  application/
+    merge-pull-request.ts
+  auth/
+    token-store.ts
+    token-backend.ts
+    token-backends.ts
+    backends/
+      token-command.ts
+      windows-dpapi.ts
+      macos-keychain.ts
+      linux-secret-service.ts
+  config/
+    config-schema.ts
+    config-validation.ts
+    config-store.ts
+    bitbucket-url.ts
+  git/
+    git-types.ts
+    git-client.ts
+    git-command-error.ts
+  bitbucket/
+    bitbucket-types.ts
+    bitbucket-client.ts
+    bitbucket-api-error.ts
+    response-parsers.ts
+    pagination.ts
+    repositories.ts
+    pull-request-types.ts
+    pull-request-search.ts
+    pull-requests.ts
+    pull-request-tasks.ts
+  repository/
+    repository-context.ts
+  pull-request/
+    branches.ts
+    reviewers.ts
+    pull-request-content.ts
+    review-validation.ts
+    merge-validation.ts
+    merge-commit-message.ts
+test/
+  cli/
+    commands/
+  application/
+  auth/
+  config/
+  git/
+  bitbucket/
+  repository/
+  pull-request/
+  helpers/
+```
+
+## Criteri di organizzazione
+
+I percorsi seguono le responsabilità: tutto l'adattamento al terminale vive in `cli/`, compreso l'input nascosto del token. Lo store e i backend di autenticazione non dipendono dalla CLI. I file sono in kebab-case; classi in PascalCase e funzioni in camelCase conservano i nomi esistenti.
+
+I tipi condivisi hanno una collocazione esplicita. [config-schema.ts](../src/config/config-schema.ts) contiene forma della configurazione, chiavi supportate e relativo controllo; [config-validation.ts](../src/config/config-validation.ts) contiene normalizzazione e validazione pure; [config-store.ts](../src/config/config-store.ts) gestisce filesystem e persistenza. [git-types.ts](../src/git/git-types.ts) raccoglie dati e contratti pubblici Git; il contratto `GitOperations` resta derivato con `Pick<GitClient, ...>` senza duplicare le firme. Il collegamento alla classe è solo di tipo e non introduce un ciclo di caricamento runtime.
+
+Le response Bitbucket restano in [bitbucket-types.ts](../src/bitbucket/bitbucket-types.ts); opzioni e identità delle operazioni PR sono in [pull-request-types.ts](../src/bitbucket/pull-request-types.ts). La ricerca paginata e il filtro repository vivono in [pull-request-search.ts](../src/bitbucket/pull-request-search.ts), separati dalle operazioni REST di [pull-requests.ts](../src/bitbucket/pull-requests.ts). Parser e paginazione rimangono condivisi.
+
+[token-backends.ts](../src/auth/token-backends.ts) seleziona il backend; ogni protocollo nativo ha un file in `auth/backends/`. Il modulo `token-command.ts` condivide esecuzione sicura, tipi del runner e identità delle credenziali. I backend mantengono timeout, protezione dei secret e diagnostiche centralizzati.
+
+I tipi privati e gli helper usati da un solo modulo restano accanto all'implementazione. Le funzioni di dominio rimangono funzioni pure; non sono introdotte classi di servizio o directory generiche `types`, `utils` o `services`. Gli import puntano al modulo che possiede la definizione: non mantenere re-export dei vecchi percorsi o barrel generici. `cli/commands/index.ts` è il punto di registrazione dei comandi.
+
+I test seguono le aree di `src/`, con gli helper condivisi in `test/helpers/`. I test puri di branch, reviewer e contenuto PR sono separati per argomento. Per eseguire un'area usare, ad esempio, `node --test "test/config/*.test.ts"`; per i comandi usare `node --test "test/cli/commands/*.test.ts"`. `npm test` seleziona ricorsivamente solo i file `*.test.ts`, includendo tutte le aree ed escludendo gli helper.
 
 ## Composizione e CLI
 
 `main.ts` costruisce gli store e inizializza lazy configurazione e client. I comandi ricevono un `CommandContext`; i contratti `BitbucketApi`, `GitOperations` e i `Pick` degli store espongono i metodi usati senza imporre istanze concrete ai consumer.
 
-Ogni comando si registra con `register...Command(program, context)`. L'elenco dei registrar risiede in `commands/index.ts`; Commander gestisce routing, help e parsing. I nomi delle opzioni sono in kebab-case.
+Ogni comando si registra con `register...Command(program, context)`. L'elenco dei registrar risiede in `cli/commands/index.ts`; Commander gestisce routing, help e parsing. I nomi delle opzioni sono in kebab-case.
 
 `-C` / `--path` prima del comando cambia temporaneamente la directory. Il cleanup la ripristina anche dopo help o errori. Dopo `bb git`, gli argomenti appartengono invece a Git: `bb git -C ...` deve inoltrare l'opzione senza interpretarla.
 
@@ -101,7 +186,7 @@ I reviewer configurati sono il default. `--reviewer` ripetibile o separato da vi
 
 ## Merge PR
 
-`mergeOpenPullRequest` orchestra ricerca, rilettura, validazione, task opzionali, messaggio e merge. I moduli REST espongono operazioni su PR, suggerimento del messaggio e task; le regole pure risiedono in `pullrequest/merge-validation.ts`. Non introdurre checkout, pull, merge locale, push o stash.
+`mergeOpenPullRequest` orchestra ricerca, rilettura, validazione, task opzionali, messaggio e merge. I moduli REST espongono operazioni su PR, suggerimento del messaggio e task; le regole pure risiedono in `pull-request/merge-validation.ts`. Non introdurre checkout, pull, merge locale, push o stash.
 
 Il merge usa `POST .../pull-requests/{id}/merge` con versione corrente e rispetta i merge check del server. Una PR senza reviewer è ammessa; se sono presenti, ne serve almeno uno `APPROVED`. Qualunque `NEEDS_WORK` blocca il merge.
 
@@ -123,6 +208,6 @@ Durante lo sviluppo Node esegue TypeScript direttamente. Il build con `tsconfig.
 
 L'allowlist del pacchetto comprende solo runtime JavaScript, manifest, README e Commander con licenza, incluso tramite `bundleDependencies`. `npm run test:package` verifica contenuti, installazione offline con cache vuota e dipendenze di produzione, launcher e configurazione fittizia. Prefisso e dati temporanei sono isolati e ripuliti, senza modificare l'installazione globale o la configurazione reale.
 
-La suite nativa Node seleziona `test/*.test.ts`; gli helper non vengono eseguiti come suite. I test usano dipendenze sostituibili e mantengono le verifiche integrate della CLI. La CI in [.github/workflows/ci.yml](../.github/workflows/ci.yml) esegue formattazione, typecheck, suite e pacchetto su Node 24 in Windows, Linux e macOS; abilita inoltre il round trip DPAPI isolato su Windows.
+La suite nativa Node seleziona `test/**/*.test.ts`; gli helper non vengono eseguiti come suite. I test usano dipendenze sostituibili e mantengono le verifiche integrate della CLI. La CI in [.github/workflows/ci.yml](../.github/workflows/ci.yml) esegue formattazione, typecheck, suite e pacchetto su Node 24 in Windows, Linux e macOS; abilita inoltre il round trip DPAPI isolato su Windows.
 
 I backend macOS e Linux sono verificati tramite tool simulati e richiedono prove native nei rispettivi ambienti. Restano da verificare i flussi autenticati contro il server aziendale e da scegliere il canale interno di release. La cancellazione del source branch non è implementata e va valutata separatamente.

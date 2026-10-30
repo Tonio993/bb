@@ -274,7 +274,7 @@ npm test
 
 I test usano il runner nativo Node, client sostituibili e risposte HTTP simulate. Non richiedono un server Bitbucket, un token reale o operazioni Git remote. Alcuni test eseguono subprocess Node per verificare la CLI e usano configurazioni temporanee isolate.
 
-I comandi dipendono da contratti strutturali ottenuti con `Pick`, così i test possono fornire semplici oggetti con i metodi necessari. I test di `BitbucketClient` iniettano `fetch` nelle opzioni del costruttore; quelli di `GitClient` iniettano `execute` nel quarto argomento opzionale, senza sostituire le funzioni globali di rete o processo. In esecuzione normale i client usano le API native Node. `npm test` seleziona `test/*.test.ts` ed esclude gli helper condivisi dalla scoperta delle suite.
+I comandi dipendono da contratti strutturali ottenuti con `Pick`, così i test possono fornire semplici oggetti con i metodi necessari. I test di `BitbucketClient` iniettano `fetch` nelle opzioni del costruttore; quelli di `GitClient` iniettano `execute` nel quarto argomento opzionale, senza sostituire le funzioni globali di rete o processo. In esecuzione normale i client usano le API native Node. `npm test` seleziona `test/**/*.test.ts` ed esclude gli helper condivisi dalla scoperta delle suite.
 
 La verifica del pacchetto installabile è separata e si avvia con `npm run test:package`.
 
@@ -286,11 +286,13 @@ I test di `TokenStore` usano backend fittizi per verificare precedenza delle cre
 
 ```powershell
 $env:BB_TEST_NATIVE_TOKEN_STORE = "1"
-node --test test/token-backends.test.ts
+node --test test/auth/token-backends.test.ts
 Remove-Item Env:BB_TEST_NATIVE_TOKEN_STORE
 ```
 
 Le regole di lavoro sono in [AGENTS.md](AGENTS.md); responsabilità dei moduli e invarianti sono descritte in [docs/architecture.md](docs/architecture.md).
+
+La [mappa dei file](docs/architecture.md#mappa-dei-file) mostra la struttura completa. I comandi sono in `src/cli/commands/`, le regole pure in `src/pull-request/` e i test seguono le stesse aree di `src/`. Schema, validazione e persistenza della configurazione hanno moduli distinti; i backend nativi del token sono raccolti in `src/auth/backends/`.
 
 ## Attività rimanenti
 
