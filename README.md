@@ -21,7 +21,53 @@ node src/main.ts config init
 
 Node esegue direttamente TypeScript: durante lo sviluppo non serve una fase di compilazione.
 
-La distribuzione come comando `bb` è ancora da preparare: `package.json` è privato e non dichiara un campo `bin`. Gli esempi seguenti usano quindi `node src/main.ts` dalla directory del progetto. Per eseguire la CLI da un'altra directory, indicare il percorso assoluto di `src/main.ts`.
+Gli esempi di sviluppo seguenti usano `node src/main.ts` dalla directory del progetto. Per eseguire i sorgenti da un'altra directory, indicare il percorso assoluto di `src/main.ts`. Dopo l'installazione del pacchetto si può usare direttamente `bb`.
+
+## Packaging e installazione del comando bb
+
+Il pacchetto richiede Node.js `>=24.0.0`. Per prepararlo da un checkout con le dipendenze installate:
+
+```powershell
+npm run typecheck
+npm test
+npm run test:package
+npm pack
+```
+
+`npm pack` esegue automaticamente `prepack`, che avvia il build, e genera `bb-0.1.0.tgz` nella directory corrente. Il build pulisce `dist/`, compila solo `src/` tramite `tsconfig.build.json` e riscrive gli import `.ts` in `.js`. Non genera eseguibili `.exe`.
+
+Questa compilazione serve alla distribuzione: [Node.js 24 non esegue il type stripping sotto `node_modules`](https://r2.nodejs.org/docs/v24.0.2/api/typescript.html). Lo sviluppo continua a usare TypeScript diretto e `npm start` non richiede il build.
+
+L'archivio contiene il manifest, il README e i file JavaScript di `dist/`. Sorgenti TypeScript, test, configurazioni di sviluppo, token e dipendenze di sviluppo sono esclusi. Commander viene installato come dipendenza runtime da npm.
+
+Per installare il tarball:
+
+```powershell
+npm install --global "./bb-0.1.0.tgz" --omit=dev
+bb --help
+bb config init
+bb -C "C:\work\payments" get-pr-url develop
+```
+
+Il campo `bin` espone `dist/main.js` come comando `bb`. npm crea il launcher adatto alla piattaforma. Controllare con `npm prefix --global` il prefisso di installazione: la directory del prefisso su Windows, oppure la sua sottodirectory `bin` su Linux e macOS, deve essere nel `PATH`.
+
+Se è già presente la CLI PowerShell, controllare quale comando viene risolto prima di usare il nuovo launcher:
+
+```powershell
+Get-Command bb -All
+```
+
+Per aggiornare, installare il nuovo tarball con lo stesso comando `npm install --global`. Per disinstallare:
+
+```powershell
+npm uninstall --global bb
+```
+
+La distribuzione interna avviene tramite tarball. `private: true` mantiene il blocco alla pubblicazione con `npm publish`.
+
+`npm run test:package` costruisce un archivio temporaneo, ne controlla i file e lo installa con sole dipendenze di produzione e script di installazione disabilitati. Verifica il launcher da una directory esterna al checkout, l'help di `merge-pr` e una lettura della configurazione isolata. Il prefisso di prova viene rimosso al termine; l'installazione globale dell'utente e la configurazione reale non vengono modificate. Il controllo usa la cache npm e, quando necessario, il registry configurato per recuperare le dipendenze.
+
+Per generare solo i file di distribuzione, usare `npm run build`.
 
 ## Configurazione globale
 
@@ -204,10 +250,12 @@ npm test
 
 I test usano il runner nativo Node, client sostituibili e risposte HTTP simulate. Non richiedono un server Bitbucket, un token reale o operazioni Git remote. Alcuni test eseguono subprocess Node per verificare la CLI e usano configurazioni temporanee isolate.
 
+La verifica del pacchetto installabile è separata e si avvia con `npm run test:package`.
+
 Le regole architetturali e lo stato del porting sono descritti in [AGENTS.md](AGENTS.md).
 
 ## Attività rimanenti
 
-- Preparare il packaging e l'installazione del comando `bb`.
+- Distribuire il tarball validato attraverso il canale interno scelto per le release.
 - Verificare i flussi autenticati contro il server Bitbucket aziendale: le verifiche automatizzate attuali sono offline.
 - Valutare in seguito un token store portabile, mantenendo quello DPAPI durante il porting funzionale.

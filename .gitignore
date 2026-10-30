@@ -54,6 +54,7 @@ report.*.json
 *.msi
 *.zip
 *.tar.gz
+*.tgz
 
 # Local test artifacts
 test-results/

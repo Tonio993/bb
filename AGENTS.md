@@ -50,6 +50,10 @@ node .\src\main.ts get-pr-url develop
 
 Non è prevista una fase di transpilation durante il normale sviluppo.
 
+Per la distribuzione npm, `npm run build` genera invece JavaScript in `dist/` tramite `tsconfig.build.json`. Il comando `npm pack` avvia questo build tramite `prepack`. Il launcher `bb` punta a `dist/main.js`, perché Node.js 24 non esegue TypeScript sotto `node_modules`.
+
+Il build di distribuzione non deve cambiare il flusso di sviluppo diretto e non deve generare `.exe`.
+
 Il progetto usa:
 
 ```json
@@ -1297,6 +1301,9 @@ completamento opzionale dei task PR
 paginazione e wildcard repository
 test di dominio, client e CLI
 README operativo
+build JavaScript di distribuzione e launcher npm bb
+tarball con allowlist dei soli file runtime e README
+verifica separata del pacchetto installato in un prefisso temporaneo
 ```
 
 Le verifiche automatizzate usano risposte HTTP simulate e dipendenze Git sostituibili. Non equivalgono a una verifica dei flussi autenticati contro il server Bitbucket aziendale.
@@ -1306,11 +1313,13 @@ La configurazione globale, `create-pr`, `merge-pr` REST e la coerenza della CLI 
 Attività successive:
 
 ```text
-packaging/release
+distribuzione/release interna del tarball
 verifica dei flussi autenticati sul server aziendale
 ```
 
-Il pacchetto è ancora privato e non dichiara un campo `bin`: durante lo sviluppo usare `node src/main.ts ...`. Preparare l'installazione del comando `bb` nel lavoro di packaging, senza dare per esistente un launcher.
+Il pacchetto rimane privato e dichiara il launcher `bb` tramite `bin`. La preparazione usa `npm pack`; l'installazione usa `npm install --global` sul tarball. Durante lo sviluppo continuare a usare `node src/main.ts ...`.
+
+Eseguire `npm run test:package` quando cambiano packaging, build, dipendenze runtime o launcher. Questo controllo costruisce un tarball e verifica l'installazione con sole dipendenze di produzione in un prefisso temporaneo. Deve rimanere separato dalla suite offline `npm test` e non deve sostituire l'installazione globale dell'utente o leggere la configurazione reale.
 
 Il token store DPAPI rimane transitorio e limita le operazioni autenticate a Windows. Una soluzione portabile e l'eventuale cancellazione del branch source sono attività future da valutare separatamente.
 
