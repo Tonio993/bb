@@ -218,4 +218,6 @@ La suite nativa Node seleziona `test/**/*.test.ts`; gli helper non vengono esegu
 
 Il job `package` dipende dal successo dell'intera matrice `verify`. Su un checkout pulito Ubuntu installa le dipendenze con `npm ci` e genera `out/bb-<versione>.tgz` tramite `npm pack`, includendo build e Commander. `actions/upload-artifact` conserva soltanto i tarball per 30 giorni nell'artifact `bb-package-<commit SHA>`, senza eseguire `npm publish` o creare release. Il job usa gli stessi trigger della verifica, incluse Pull Request ed esecuzioni manuali.
 
+La cache del package manager in `actions/setup-node` è disabilitata esplicitamente in entrambi i job. Il ripristino della cache npm ha bloccato un'esecuzione prima di `npm ci`, con download a zero byte ed errore del servizio `Egress is over the account limit`. Le dipendenze vengono installate dal lockfile tramite il registry; la generazione del pacchetto non dipende dal ripristino della cache GitHub Actions.
+
 I backend macOS e Linux sono verificati tramite tool simulati e richiedono prove native nei rispettivi ambienti. Restano da verificare i flussi autenticati contro il server aziendale e da scegliere il canale interno di release. La cancellazione del source branch non è implementata e va valutata separatamente.
