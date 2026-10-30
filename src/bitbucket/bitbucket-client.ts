@@ -3,10 +3,6 @@ import type {
 } from "../config/config.ts";
 
 import {
-    getBitbucketToken,
-} from "../auth/token-store.ts";
-
-import {
     BitbucketApiError,
 } from "./bitbucket-api-error.ts";
 
@@ -26,7 +22,7 @@ export class BitbucketClient {
 
     constructor(
         config: BbConfig["bitbucket"],
-        tokenProvider: TokenProvider = getBitbucketToken,
+        tokenProvider: TokenProvider,
     ) {
         this.baseUrl = config.url.replace(/\/+$/, "");
         this.tokenProvider = tokenProvider;

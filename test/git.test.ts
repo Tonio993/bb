@@ -51,6 +51,7 @@ function setEnvironment(t: TestContext, values: Record<string, string | undefine
 
 function createContext(gitClient: GitClient): CommandContext {
     return {
+        get tokenStore(): never { throw new Error("Token storage is already injected in Git."); },
         gitClient,
         get configStore(): never {
             throw new Error("The Git command must not access the configuration store.");

@@ -96,6 +96,7 @@ function createFixture(t: TestContext) {
     const fetchGit = t.mock.method(git, "fetch", () => { throw new Error("Merging must not fetch Git references."); });
     const output = t.mock.method(console, "log", () => {});
     const context: CommandContext = {
+        get tokenStore(): never { throw new Error("Token storage is already injected in the clients."); },
         config,
         gitClient: git,
         bitbucketClient: new BitbucketClient(config.bitbucket, () => "test-token"),

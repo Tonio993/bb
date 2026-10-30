@@ -16,6 +16,7 @@ const mainUrl = new URL("../src/main.ts", import.meta.url);
 
 function createContext(gitClient?: GitClient): CommandContext {
     return {
+        get tokenStore(): never { throw new Error("Token storage must remain lazy."); },
         get configStore(): never { throw new Error("Configuration must remain lazy."); },
         get config(): never { throw new Error("Configuration must remain lazy."); },
         get bitbucketClient(): never { throw new Error("Bitbucket must not be initialized."); },
@@ -50,7 +51,7 @@ function createDirectory(t: TestContext): string {
     return directory;
 }
 
-for (const command of [[], ["config"], ["config", "list"], ["config", "init"], ["git"], ["get-pr-url"], ["get-pr-urls"], ["create-pr"], ["merge-pr"]]) {
+for (const command of [[], ["config"], ["config", "list"], ["config", "init"], ["token"], ["token", "set"], ["token", "status"], ["token", "delete"], ["git"], ["get-pr-url"], ["get-pr-urls"], ["create-pr"], ["merge-pr"]]) {
     test(`help for '${command.join(" ") || "bb"}' returns normally without initializing clients`, async (t) => {
         const output = captureOutput(t);
         await runCli([...command, "--help"], createContext());

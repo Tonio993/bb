@@ -35,6 +35,7 @@ test("config list, read, and write work without resolving application clients or
     const { store } = createFixture(t);
     const output = t.mock.method(console, "log", () => {});
     const context: CommandContext = {
+        get tokenStore(): never { throw new Error("Token storage must remain lazy."); },
         configStore: store,
         get config(): never {
             throw new Error("Required configuration must remain lazy.");

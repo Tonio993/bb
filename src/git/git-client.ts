@@ -7,10 +7,6 @@ import {
 } from "node:path";
 
 import {
-    getBitbucketToken,
-} from "../auth/token-store.ts";
-
-import {
     GitCommandError,
 } from "./git-command-error.ts";
 
@@ -35,7 +31,7 @@ export class GitClient {
 
     constructor(
         remote: string,
-        tokenProvider: TokenProvider = getBitbucketToken,
+        tokenProvider: TokenProvider,
     ) {
         this.remote = remote;
         this.tokenProvider = tokenProvider;

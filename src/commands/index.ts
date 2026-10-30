@@ -10,6 +10,8 @@ import {
     registerConfigCommand,
 } from "./config-command.ts";
 
+import { registerTokenCommand } from "./token-command.ts";
+
 import {
     registerGetPrUrlCommand,
 } from "./get-pr-url-command.ts";
@@ -39,6 +41,7 @@ type CommandRegistrar = (
 
 const commandRegistrars: CommandRegistrar[] = [
     registerConfigCommand,
+    registerTokenCommand,
     registerGitCommand,
     registerGetPrUrlsCommand,
     registerGetPrUrlCommand,

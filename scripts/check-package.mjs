@@ -80,6 +80,9 @@ try {
 
     const main = join(installedPackage, "dist", "main.js");
     assert.match(run(process.execPath, [main, "merge-pr", "--help"], { env: environment }), /--complete-tasks/);
+    assert.match(run(process.execPath, [main, "token", "status"], {
+        env: { ...environment, BB_TOKEN: "package-smoke-token" },
+    }), /Bitbucket token source: BB_TOKEN/);
     assert.equal(run(process.execPath, [main, "config", "git.remote"], { env: environment }).trim(), "origin");
     console.log("Package contents, production-only installation, and CLI smoke checks passed.");
 } finally {

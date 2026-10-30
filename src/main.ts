@@ -8,7 +8,7 @@ import {
 } from "./bitbucket/bitbucket-client.ts";
 
 import {
-    clearBitbucketTokenCache,
+    TokenStore,
 } from "./auth/token-store.ts";
 
 import {
@@ -31,6 +31,8 @@ import {
 const configStore =
     new ConfigStore();
 
+const tokenStore = new TokenStore();
+
 
 let cachedConfig:
     ReturnType<ConfigStore["loadRequired"]> | undefined;
@@ -51,6 +53,7 @@ const getConfig = () => {
 
 
 const context: CommandContext = {
+    tokenStore,
     configStore,
 
     get config() {
@@ -61,6 +64,7 @@ const context: CommandContext = {
         cachedBitbucketClient ??=
             new BitbucketClient(
                 getConfig().bitbucket,
+                () => tokenStore.get(),
             );
 
         return cachedBitbucketClient;
@@ -75,6 +79,7 @@ const context: CommandContext = {
                 typeof remote === "string"
                     ? remote
                     : "origin",
+                () => tokenStore.get(),
             );
         }
 
@@ -104,5 +109,5 @@ try {
         process.exitCode = 1;
     }
 } finally {
-    clearBitbucketTokenCache();
+    tokenStore.clearCache();
 }

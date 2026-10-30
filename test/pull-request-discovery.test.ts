@@ -173,6 +173,7 @@ function createContext(t: TestContext, client: BitbucketClient, projectWide: boo
     t.mock.method(git, "currentBranch", () => { throw new Error("Both branches are already known."); });
     return {
         config, bitbucketClient: client,
+        get tokenStore(): never { throw new Error("Token storage is already injected in the client."); },
         get configStore(): never { throw new Error("Configuration is already loaded."); },
         get gitClient() {
             assert.equal(projectWide, false, "Project-wide discovery must not query Git.");
@@ -209,6 +210,7 @@ test("get-pr-urls prints only matching URLs and forwards the repository filter",
 
 test("get-pr-urls rejects identical branches before reading configuration or querying Bitbucket", async () => {
     const context: CommandContext = {
+        get tokenStore(): never { throw new Error("Token storage must remain lazy."); },
         get config(): never { throw new Error("Configuration must remain lazy."); },
         get configStore(): never { throw new Error("Configuration must remain lazy."); },
         get gitClient(): never { throw new Error("Git must not be queried."); },

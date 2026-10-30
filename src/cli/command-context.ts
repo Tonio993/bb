@@ -1,3 +1,5 @@
+import type { TokenStore } from "../auth/token-store.ts";
+
 import type {
     BitbucketClient,
 } from "../bitbucket/bitbucket-client.ts";
@@ -13,6 +15,7 @@ import type {
 
 
 export type CommandContext = {
+    readonly tokenStore: TokenStore;
     readonly configStore: ConfigStore;
 
     readonly config: BbConfig;
