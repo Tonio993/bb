@@ -238,17 +238,19 @@ Esempio:
 
 ```typescript
 export type CommandContext = {
-    readonly tokenStore: TokenStore;
-    readonly configStore: ConfigStore;
+    readonly tokenStore: Pick<TokenStore, "source" | "set" | "delete">;
+    readonly configStore: Pick<ConfigStore, "path" | "get" | "set" | "save" | "snapshot">;
     readonly config: BbConfig;
-    readonly bitbucketClient: BitbucketClient;
-    readonly gitClient: GitClient;
+    readonly bitbucketClient: BitbucketApi;
+    readonly gitClient: GitOperations;
 };
 ```
 
 Non passare liste crescenti di dipendenze direttamente alle funzioni CLI.
 
 Evitare dipendenze applicative globali implicite.
+
+I contratti dei consumer espongono solo i metodi utilizzati tramite `Pick`: i test dei comandi possono fornire oggetti semplici senza istanziare le classi concrete. `main.ts` continua a costruire i client e gli store reali.
 
 ---
 
@@ -1268,6 +1270,10 @@ AGENTS.md
 ---
 
 # Testing
+
+`BitbucketClient` accetta `fetch` nelle opzioni del costruttore; `GitClient` accetta `execute` nel quarto argomento opzionale. I default restano le API native Node. Nei test dei client iniettare queste funzioni anziché sostituire globalmente `fetch` o `spawnSync`. Nei test dei comandi usare stub strutturali per le dipendenze non coinvolte nella verifica; mantenere i test integrati di parsing, bootstrap, output ed exit code della CLI.
+
+`npm test` seleziona i file `test/*.test.ts`, escludendo gli helper condivisi dalla scoperta delle suite.
 
 Aggiungere test soprattutto alle funzioni pure e alla logica di dominio.
 

@@ -1,8 +1,7 @@
 import assert from "node:assert/strict";
 import childProcess from "node:child_process";
-import type { SpawnSyncOptions, SpawnSyncReturns } from "node:child_process";
+import type { SpawnSyncOptions } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -11,25 +10,13 @@ import { fileURLToPath } from "node:url";
 
 import { runCli } from "../src/cli/cli.ts";
 import type { CommandContext } from "../src/cli/command-context.ts";
-import { GitClient } from "../src/git/git-client.ts";
+import { GitClient, type GitCommandRunner } from "../src/git/git-client.ts";
 import { GitCommandError } from "../src/git/git-command-error.ts";
 
-function mockGit(t: TestContext, result: Partial<SpawnSyncReturns<string | Buffer>> = {}) {
-    const execute = t.mock.method(childProcess, "spawnSync", () => ({
-        pid: 1,
-        output: [],
-        stdout: Buffer.alloc(0),
-        stderr: Buffer.alloc(0),
-        status: 0,
-        signal: null,
-        ...result,
+function mockGit(t: TestContext, result: Partial<ReturnType<GitCommandRunner>> = {}) {
+    return t.mock.fn<GitCommandRunner>(() => ({
+        stdout: "", stderr: "", status: 0, signal: null, ...result,
     }));
-    syncBuiltinESMExports();
-    t.after(() => {
-        execute.mock.restore();
-        syncBuiltinESMExports();
-    });
-    return execute;
 }
 
 function setEnvironment(t: TestContext, values: Record<string, string | undefined>): void {
@@ -66,12 +53,38 @@ function createContext(gitClient: GitClient): CommandContext {
     };
 }
 
+test("Git clients keep their injected process runners isolated", (t) => {
+    const first = mockGit(t, { stdout: "feature/first\n" });
+    const second = mockGit(t, { stdout: "feature/second\n" });
+    const token = (): never => { throw new Error("Local operations must not request credentials."); };
+    const firstClient = new GitClient("origin", token, () => undefined, { execute: first });
+    const secondClient = new GitClient("origin", token, () => undefined, { execute: second });
+    assert.equal(firstClient.currentBranch(), "feature/first");
+    assert.equal(secondClient.currentBranch(), "feature/second");
+    assert.equal(first.mock.callCount(), 1);
+    assert.equal(second.mock.callCount(), 1);
+});
+
+for (const branchType of ["source", "target"]) {
+    test(`missing remote ${branchType} branches retain their role and configured remote in diagnostics`, (t) => {
+        const execute = mockGit(t, { status: 1 });
+        const token = (): never => { throw new Error("Branch checks must not request credentials."); };
+        const client = new GitClient("origin", token, () => undefined, { execute });
+        assert.throws(() => client.assertRemoteBranchExists("feature/test", branchType, "upstream"), {
+            message: `Remote ${branchType} branch 'upstream/feature/test' does not exist.`,
+        });
+        assert.deepEqual(execute.mock.calls[0].arguments[1], [
+            "show-ref", "--verify", "--quiet", "refs/remotes/upstream/feature/test",
+        ]);
+    });
+}
+
 test("local Git commands do not request a token, including remote command names used as arguments", (t) => {
     const execute = mockGit(t);
     const tokenProvider = t.mock.fn(() => {
         throw new Error("Local Git commands must not request a token.");
     });
-    const client = new GitClient("origin", tokenProvider, () => { throw new Error("Local Git commands must not read the Bitbucket URL."); });
+    const client = new GitClient("origin", tokenProvider, () => { throw new Error("Local Git commands must not read the Bitbucket URL."); }, { execute });
     const commands = [
         ["status"],
         ["log", "--oneline"],
@@ -109,7 +122,7 @@ test("remote Git commands receive authentication after Git global options withou
         GIT_CONFIG_VALUE_0: undefined,
     });
     const tokenProvider = t.mock.fn(() => "test-bitbucket-token");
-    const client = new GitClient("origin", tokenProvider, () => "https://bitbucket.example");
+    const client = new GitClient("origin", tokenProvider, () => "https://bitbucket.example", { execute });
     const commands = [
         ["fetch", "origin"],
         ["pull", "--ff-only"],
@@ -156,7 +169,7 @@ test("authentication appends to inherited Git configuration only in the child en
         GIT_CONFIG_KEY_1: undefined,
         GIT_CONFIG_VALUE_1: undefined,
     });
-    new GitClient("origin", () => "test-bitbucket-token", () => "https://bitbucket.example").run(["fetch"]);
+    new GitClient("origin", () => "test-bitbucket-token", () => "https://bitbucket.example", { execute }).run(["fetch"]);
     const options = execute.mock.calls[0].arguments[2] as SpawnSyncOptions;
     assert.equal(options.env?.GIT_CONFIG_COUNT, "2");
     assert.equal(options.env?.GIT_CONFIG_KEY_0, "http.sslVerify");
@@ -169,9 +182,9 @@ test("authentication appends to inherited Git configuration only in the child en
 });
 
 test("explicit authentication options override automatic detection", (t) => {
-    mockGit(t);
+    const execute = mockGit(t);
     const tokenProvider = t.mock.fn(() => "test-bitbucket-token");
-    const client = new GitClient("origin", tokenProvider, () => "https://bitbucket.example");
+    const client = new GitClient("origin", tokenProvider, () => "https://bitbucket.example", { execute });
     client.run(["fetch"], { authenticated: false });
     assert.equal(tokenProvider.mock.callCount(), 0);
     client.run(["status"], { authenticated: true });
@@ -181,7 +194,7 @@ test("explicit authentication options override automatic detection", (t) => {
 test("fetch uses the configured remote and requests authentication", (t) => {
     const execute = mockGit(t, { stdout: "", stderr: "" });
     const tokenProvider = t.mock.fn(() => "test-bitbucket-token");
-    new GitClient("upstream", tokenProvider, () => "https://bitbucket.example").fetch();
+    new GitClient("upstream", tokenProvider, () => "https://bitbucket.example", { execute }).fetch();
     assert.deepEqual(execute.mock.calls[0].arguments[1], ["fetch", "upstream"]);
     assert.equal(tokenProvider.mock.callCount(), 1);
 });
@@ -192,7 +205,7 @@ test("commit history excludes merges, requests oldest first, and parses subjects
         stderr: "",
     });
     const tokenProvider = t.mock.fn(() => { throw new Error("Reading commit history must not request a token."); });
-    const commits = new GitClient("upstream", tokenProvider, () => { throw new Error("Local Git must not read the Bitbucket URL."); }).commitsBetween(
+    const commits = new GitClient("upstream", tokenProvider, () => { throw new Error("Local Git must not read the Bitbucket URL."); }, { execute }).commitsBetween(
         "refs/remotes/upstream/develop", "refs/remotes/upstream/feature/test",
     );
     assert.deepEqual(commits, [
@@ -215,7 +228,7 @@ test("bb git forwards Git options and propagates the exit code without requestin
     t.after(() => { process.exitCode = originalExitCode; });
     const args = ["-C", "repository with spaces", "-c", "example.setting=fetch", "status", "--short"];
 
-    await runCli(["git", ...args], createContext(new GitClient("origin", tokenProvider, () => { throw new Error("Local Git must not read the Bitbucket URL."); })));
+    await runCli(["git", ...args], createContext(new GitClient("origin", tokenProvider, () => { throw new Error("Local Git must not read the Bitbucket URL."); }, { execute })));
     assert.deepEqual(execute.mock.calls[0].arguments[1], args);
     assert.equal(tokenProvider.mock.callCount(), 0);
     assert.equal(process.exitCode, 42);
@@ -224,7 +237,7 @@ test("bb git forwards Git options and propagates the exit code without requestin
 test("bb git authenticates remote operations", async (t) => {
     const execute = mockGit(t);
     const tokenProvider = t.mock.fn(() => "test-bitbucket-token");
-    await runCli(["git", "-C", "repository", "fetch", "origin"], createContext(new GitClient("origin", tokenProvider, () => "https://bitbucket.example")));
+    await runCli(["git", "-C", "repository", "fetch", "origin"], createContext(new GitClient("origin", tokenProvider, () => "https://bitbucket.example", { execute })));
     assert.equal(tokenProvider.mock.callCount(), 1);
     assert.deepEqual(execute.mock.calls[0].arguments[1], ["-C", "repository", "fetch", "origin"]);
 });
@@ -236,12 +249,12 @@ test("the global bb directory option is restored after a Git failure", async (t)
     const originalDirectory = process.cwd();
     const client = new GitClient("origin", () => {
         throw new Error("Local Git commands must not request a token.");
-    }, () => { throw new Error("Local Git must not read the Bitbucket URL."); });
+    }, () => { throw new Error("Local Git must not read the Bitbucket URL."); }, { execute });
     let executionDirectory: string | undefined;
     execute.mock.mockImplementation(() => {
         executionDirectory = process.cwd();
         return {
-            pid: 1, output: [], stdout: Buffer.alloc(0), stderr: Buffer.alloc(0),
+            pid: 1, output: [], stdout: "", stderr: "",
             status: null, signal: null, error: new Error("Git executable unavailable"),
         };
     });
@@ -262,7 +275,7 @@ for (const method of ["localBranchExists", "remoteBranchExists"] as const) {
             const execute = mockGit(t, { status: exitCode });
             const client = new GitClient("upstream", () => {
                 throw new Error("Branch checks must not request a token.");
-            }, () => { throw new Error("Branch checks must not read the Bitbucket URL."); });
+            }, () => { throw new Error("Branch checks must not read the Bitbucket URL."); }, { execute });
             assert.equal(client[method]("feature/test"), exitCode === 0);
             assert.deepEqual(execute.mock.calls[0].arguments[1], [
                 "show-ref", "--verify", "--quiet",
@@ -272,8 +285,8 @@ for (const method of ["localBranchExists", "remoteBranchExists"] as const) {
     }
 
     test(`${method} preserves Git failures instead of reporting a missing branch`, (t) => {
-        mockGit(t, { status: 128, stderr: "fatal: not a git repository\n" });
-        const client = new GitClient("origin", () => "unused", () => "https://bitbucket.example");
+        const execute = mockGit(t, { status: 128, stderr: "fatal: not a git repository\n" });
+        const client = new GitClient("origin", () => "unused", () => "https://bitbucket.example", { execute });
         assert.throws(() => client[method]("main"), (error: unknown) => {
             assert.ok(error instanceof GitCommandError);
             assert.equal(error.exitCode, 128);
@@ -291,7 +304,7 @@ const operations = [
 ];
 const failures: {
     name: string;
-    result: Partial<SpawnSyncReturns<string | Buffer>>;
+    result: Partial<ReturnType<GitCommandRunner>>;
     message: RegExp;
 }[] = [
     { name: "spawn failure", result: { status: null, error: new Error("Git executable unavailable") }, message: /Git executable unavailable/ },
@@ -302,8 +315,8 @@ const failures: {
 for (const operation of operations) {
     for (const failure of failures) {
         test(`${operation.name} reports ${failure.name} as a structured Git error`, (t) => {
-            mockGit(t, failure.result);
-            const client = new GitClient("origin", () => "unused", () => "https://bitbucket.example");
+            const execute = mockGit(t, failure.result);
+            const client = new GitClient("origin", () => "unused", () => "https://bitbucket.example", { execute });
             assert.throws(() => operation.execute(client), (error: unknown) => {
                 assert.ok(error instanceof GitCommandError);
                 assert.deepEqual(error.args, operation.args);
@@ -317,8 +330,8 @@ for (const operation of operations) {
 }
 
 test("capture preserves a failed command's exit code and uses a useful fallback without stderr", (t) => {
-    mockGit(t, { status: 42 });
-    const client = new GitClient("origin", () => "unused", () => "https://bitbucket.example");
+    const execute = mockGit(t, { status: 42 });
+    const client = new GitClient("origin", () => "unused", () => "https://bitbucket.example", { execute });
     assert.throws(() => client.currentBranch(), (error: unknown) => {
         assert.ok(error instanceof GitCommandError);
         assert.equal(error.exitCode, 42);
@@ -331,7 +344,7 @@ test("commit history supports output larger than the default process capture buf
     const body = "x".repeat(2 * 1024 * 1024);
     const output = `Title\x1e${body}\x1d`;
     const execute = mockGit(t, { stdout: output, stderr: "" });
-    const client = new GitClient("origin", () => "unused", () => "https://bitbucket.example");
+    const client = new GitClient("origin", () => "unused", () => "https://bitbucket.example", { execute });
     assert.deepEqual(client.commitsBetween("target", "source"), [{ subject: "Title", body }]);
     const options = execute.mock.calls[0].arguments[2] as SpawnSyncOptions;
     assert.ok(options.maxBuffer! >= Buffer.byteLength(output));
@@ -346,7 +359,7 @@ for (const [url, key] of [
     test(`authentication is scoped to the configured URL ${url.trim()}`, (t) => {
         const execute = mockGit(t);
         setEnvironment(t, { GIT_CONFIG_COUNT: undefined });
-        const client = new GitClient("origin", () => "test-token", () => url);
+        const client = new GitClient("origin", () => "test-token", () => url, { execute });
         client.run(["clone", "https://another.example/repo.git"]);
         const options = execute.mock.calls[0].arguments[2] as SpawnSyncOptions;
         assert.equal(options.env?.GIT_CONFIG_KEY_0, key);
@@ -360,7 +373,7 @@ for (const url of [undefined, "", "not a URL", "ssh://bitbucket.example", "https
         const execute = mockGit(t);
         setEnvironment(t, { GIT_CONFIG_COUNT: undefined });
         const token = t.mock.fn(() => "test-token");
-        const client = new GitClient("origin", token, () => url);
+        const client = new GitClient("origin", token, () => url, { execute });
         assert.throws(() => client.run(["fetch"]), /[Bb]itbucket/);
         assert.equal(token.mock.callCount(), 0);
         assert.equal(execute.mock.callCount(), 0);
@@ -372,7 +385,7 @@ for (const value of ["", "-1", "+1", " 1", "1 ", "1.5", "2extra", "1e2", "NaN", 
         const execute = mockGit(t);
         setEnvironment(t, { GIT_CONFIG_COUNT: value, GIT_CONFIG_KEY_0: "example.setting", GIT_CONFIG_VALUE_0: "keep" });
         const token = t.mock.fn(() => "test-token");
-        const client = new GitClient("origin", token, () => "https://bitbucket.example");
+        const client = new GitClient("origin", token, () => "https://bitbucket.example", { execute });
         assert.throws(() => client.run(["fetch"]), /Invalid GIT_CONFIG_COUNT/);
         assert.equal(execute.mock.callCount(), 0);
         assert.equal(token.mock.callCount(), 0);

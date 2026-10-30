@@ -3,7 +3,7 @@ import { test } from "node:test";
 import type { TestContext } from "node:test";
 import { mergeOpenPullRequest } from "../src/application/merge-pull-request.ts";
 import { BitbucketApiError } from "../src/bitbucket/bitbucket-api-error.ts";
-import { BitbucketClient } from "../src/bitbucket/bitbucket-client.ts";
+import { BitbucketClient, type FetchImplementation } from "../src/bitbucket/bitbucket-client.ts";
 import type { BitbucketPullRequest } from "../src/bitbucket/bitbucket-types.ts";
 
 function fixture(t: TestContext) {
@@ -21,7 +21,7 @@ function fixture(t: TestContext) {
         { body: merged },
     ];
     const requests: { method: string; path: string; body: unknown }[] = [];
-    t.mock.method(globalThis, "fetch", async (input: string | URL | Request, init?: RequestInit) => {
+    const request = t.mock.fn<FetchImplementation>(async (input: string | URL | Request, init?: RequestInit) => {
         const url = new URL(String(input));
         requests.push({
             method: init?.method ?? "GET", path: `${url.pathname}${url.search}`,
@@ -31,7 +31,7 @@ function fixture(t: TestContext) {
         assert.ok(response, "Unexpected REST request.");
         return Response.json(response.body, { status: response.status ?? 200 });
     });
-    const client = new BitbucketClient({ url: "https://bitbucket.example", projectKey: "PROJECT", defaultReviewers: [] }, () => "test-token");
+    const client = new BitbucketClient({ url: "https://bitbucket.example", projectKey: "PROJECT", defaultReviewers: [] }, () => "test-token", { fetch: request });
     return {
         current, merged, requests, responses,
         run: () => mergeOpenPullRequest(client, {

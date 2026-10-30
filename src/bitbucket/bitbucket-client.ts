@@ -16,15 +16,19 @@ type TokenProvider =
     () => string;
 
 export type ResponseParser<T> = (value: unknown) => T;
+export type FetchImplementation = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
+export type BitbucketApi = Pick<BitbucketClient, "get" | "post" | "put">;
 
 type BitbucketClientOptions = {
     timeoutMs?: number;
+    fetch?: FetchImplementation;
 };
 
 export class BitbucketClient {
     private readonly baseUrl: string;
     private readonly tokenProvider: TokenProvider;
     private readonly timeoutMs: number;
+    private readonly fetch: FetchImplementation;
 
     constructor(
         config: BbConfig["bitbucket"],
@@ -37,6 +41,7 @@ export class BitbucketClient {
         }
         this.baseUrl = config.url.replace(/\/+$/, "");
         this.tokenProvider = tokenProvider;
+        this.fetch = options.fetch ?? globalThis.fetch;
     }
 
 
@@ -105,7 +110,7 @@ export class BitbucketClient {
 
         try {
             response =
-                await fetch(
+                await this.fetch(
                     url,
                     request,
                 );

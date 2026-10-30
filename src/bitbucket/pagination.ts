@@ -1,9 +1,9 @@
-import type { BitbucketClient, ResponseParser } from "./bitbucket-client.ts";
+import type { BitbucketApi, ResponseParser } from "./bitbucket-client.ts";
 import type { BitbucketPage } from "./bitbucket-types.ts";
 import { parsePage } from "./response-parsers.ts";
 
 export async function* iterateBitbucketPages<T>(
-    client: BitbucketClient,
+    client: Pick<BitbucketApi, "get">,
     path: string,
     parseItem: ResponseParser<T>,
     pageDescription: string,

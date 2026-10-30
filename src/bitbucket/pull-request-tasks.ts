@@ -1,4 +1,4 @@
-import type { BitbucketClient } from "./bitbucket-client.ts";
+import type { BitbucketApi } from "./bitbucket-client.ts";
 import type { BitbucketPullRequestTask } from "./bitbucket-types.ts";
 import { iterateBitbucketPages } from "./pagination.ts";
 import { getPullRequestPath } from "./pull-requests.ts";
@@ -6,7 +6,7 @@ import type { PullRequestIdentity } from "./pull-requests.ts";
 import { parseTask } from "./response-parsers.ts";
 
 export async function getPullRequestTasks(
-    client: BitbucketClient,
+    client: Pick<BitbucketApi, "get">,
     identity: PullRequestIdentity,
 ): Promise<BitbucketPullRequestTask[]> {
     const tasks: BitbucketPullRequestTask[] = [];
@@ -19,7 +19,7 @@ export async function getPullRequestTasks(
 }
 
 export async function getPullRequestTask(
-    client: BitbucketClient,
+    client: Pick<BitbucketApi, "get">,
     identity: PullRequestIdentity,
     taskId: number,
 ): Promise<BitbucketPullRequestTask> {
@@ -27,7 +27,7 @@ export async function getPullRequestTask(
 }
 
 export async function resolvePullRequestTask(
-    client: BitbucketClient,
+    client: Pick<BitbucketApi, "put">,
     identity: PullRequestIdentity,
     taskId: number,
     version: number,

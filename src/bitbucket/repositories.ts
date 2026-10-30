@@ -1,5 +1,5 @@
-import {
-    BitbucketClient,
+import type {
+    BitbucketApi,
 } from "./bitbucket-client.ts";
 
 import type {
@@ -10,7 +10,7 @@ import { iterateBitbucketPages } from "./pagination.ts";
 
 
 export async function getProjectRepositories(
-    client: BitbucketClient,
+    client: Pick<BitbucketApi, "get">,
     projectKey: string,
 ): Promise<BitbucketRepository[]> {
     const repositories: BitbucketRepository[] = [];

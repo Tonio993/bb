@@ -273,6 +273,8 @@ npm test
 
 I test usano il runner nativo Node, client sostituibili e risposte HTTP simulate. Non richiedono un server Bitbucket, un token reale o operazioni Git remote. Alcuni test eseguono subprocess Node per verificare la CLI e usano configurazioni temporanee isolate.
 
+I comandi dipendono da contratti strutturali ottenuti con `Pick`, così i test possono fornire semplici oggetti con i metodi necessari. I test di `BitbucketClient` iniettano `fetch` nelle opzioni del costruttore; quelli di `GitClient` iniettano `execute` nel quarto argomento opzionale, senza sostituire le funzioni globali di rete o processo. In esecuzione normale i client usano le API native Node. `npm test` seleziona `test/*.test.ts` ed esclude gli helper condivisi dalla scoperta delle suite.
+
 La verifica del pacchetto installabile è separata e si avvia con `npm run test:package`.
 
 I test di `TokenStore` usano backend fittizi per verificare precedenza delle credenziali, validazione e cache. I backend macOS e Linux e gli errori dei tool nativi sono verificati tramite un esecutore simulato, senza sostituire funzioni globali di Node. Il test reale DPAPI su Windows è opzionale, usa una directory temporanea e un token fittizio e può essere abilitato così:

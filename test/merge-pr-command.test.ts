@@ -3,12 +3,13 @@ import { test } from "node:test";
 import type { TestContext } from "node:test";
 
 import { BitbucketApiError } from "../src/bitbucket/bitbucket-api-error.ts";
-import { BitbucketClient } from "../src/bitbucket/bitbucket-client.ts";
+import { BitbucketClient, type FetchImplementation } from "../src/bitbucket/bitbucket-client.ts";
 import type { BitbucketCommitMessageSuggestion, BitbucketPage, BitbucketPullRequest, BitbucketPullRequestTask } from "../src/bitbucket/bitbucket-types.ts";
 import { runCli } from "../src/cli/cli.ts";
 import type { CommandContext } from "../src/cli/command-context.ts";
 import type { BbConfig } from "../src/config/config.ts";
-import { GitClient } from "../src/git/git-client.ts";
+import type { GitOperations } from "../src/git/git-client.ts";
+import { createGitStub } from "./helpers/git-stub.ts";
 
 function createFixture(t: TestContext) {
     const config: BbConfig = {
@@ -39,7 +40,7 @@ function createFixture(t: TestContext) {
     const taskFailures = new Map<number, number>();
     const taskCompletion = { confirmed: true };
     const requests: { path: string; method: string; body: unknown }[] = [];
-    t.mock.method(globalThis, "fetch", async (input: string | URL | Request, options?: RequestInit) => {
+    const request = t.mock.fn<FetchImplementation>(async (input: string | URL | Request, options?: RequestInit) => {
         const url = new URL(String(input));
         const path = `${url.pathname}${url.search}`;
         const method = options?.method ?? "GET";
@@ -89,17 +90,17 @@ function createFixture(t: TestContext) {
         }
         throw new Error(`Unexpected REST request: ${method} ${path}`);
     });
-    const git = new GitClient("origin", () => { throw new Error("Remote Git must not be used for merging."); }, () => config.bitbucket.url);
-    const currentBranch = t.mock.method(git, "currentBranch", () => "feature/current");
-    const currentRepository = t.mock.method(git, "currentRepository", () => "payments");
-    const runGit = t.mock.method(git, "run", () => { throw new Error("Merging must use REST."); });
-    const fetchGit = t.mock.method(git, "fetch", () => { throw new Error("Merging must not fetch Git references."); });
+    const currentBranch = t.mock.fn(() => "feature/current");
+    const currentRepository = t.mock.fn(() => "payments");
+    const runGit = t.mock.fn<GitOperations["run"]>(() => { throw new Error("Merging must use REST."); });
+    const fetchGit = t.mock.fn<GitOperations["fetch"]>(() => { throw new Error("Merging must not fetch Git references."); });
+    const git = createGitStub({ currentBranch, currentRepository, run: runGit, fetch: fetchGit });
     const output = t.mock.method(console, "log", () => {});
     const context: CommandContext = {
         get tokenStore(): never { throw new Error("Token storage is already injected in the clients."); },
         config,
         gitClient: git,
-        bitbucketClient: new BitbucketClient(config.bitbucket, () => "test-token"),
+        bitbucketClient: new BitbucketClient(config.bitbucket, () => "test-token", { fetch: request }),
         get configStore(): never { throw new Error("Configuration is already loaded."); },
     };
     return {

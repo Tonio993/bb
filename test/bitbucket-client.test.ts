@@ -2,19 +2,28 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { BitbucketApiError } from "../src/bitbucket/bitbucket-api-error.ts";
-import { BitbucketClient } from "../src/bitbucket/bitbucket-client.ts";
+import { BitbucketClient, type FetchImplementation } from "../src/bitbucket/bitbucket-client.ts";
 
-function createClient(timeoutMs?: number) {
+function createClient(request: FetchImplementation, timeoutMs?: number) {
     return new BitbucketClient({
         url: "https://bitbucket.example/bitbucket///", projectKey: "PROJECT", defaultReviewers: [],
-    }, () => "test-token", { timeoutMs });
+    }, () => "test-token", { timeoutMs, fetch: request });
 }
 
 const path = "/rest/api/latest/projects/PROJECT/repos/payments/pull-requests";
 
+test("clients keep their injected HTTP transports isolated during concurrent requests", async (t) => {
+    const first = t.mock.fn<FetchImplementation>(async () => Response.json({ id: 1 }));
+    const second = t.mock.fn<FetchImplementation>(async () => Response.json({ id: 2 }));
+    const responses = await Promise.all([createClient(first).get(path), createClient(second).get(path)]);
+    assert.deepEqual(responses, [{ id: 1 }, { id: 2 }]);
+    assert.equal(first.mock.callCount(), 1);
+    assert.equal(second.mock.callCount(), 1);
+});
+
 test("HTTP requests preserve the server context path and normalize boundary slashes", async (t) => {
-    const request = t.mock.method(globalThis, "fetch", async () => Response.json({ id: 42 }));
-    assert.deepEqual(await createClient().get(path), { id: 42 });
+    const request = t.mock.fn<FetchImplementation>(async () => Response.json({ id: 42 }));
+    assert.deepEqual(await createClient(request).get(path), { id: 42 });
     const [url, options] = request.mock.calls[0].arguments;
     assert.equal(url, "https://bitbucket.example/bitbucket/rest/api/latest/projects/PROJECT/repos/payments/pull-requests");
     assert.equal(options?.method, "GET");
@@ -24,9 +33,9 @@ test("HTTP requests preserve the server context path and normalize boundary slas
 
 for (const method of ["post", "put"] as const) {
     test(`${method.toUpperCase()} serializes Unicode JSON with the required content type`, async (t) => {
-        const request = t.mock.method(globalThis, "fetch", async () => Response.json({ id: 42 }));
+        const request = t.mock.fn<FetchImplementation>(async () => Response.json({ id: 42 }));
         const body = { title: "Payment €", description: "First line\nSecond line" };
-        await createClient()[method](path, body);
+        await createClient(request)[method](path, body);
         const options = request.mock.calls[0].arguments[1];
         assert.equal(options?.method, method.toUpperCase());
         assert.deepEqual(options?.headers, {
@@ -38,15 +47,15 @@ for (const method of ["post", "put"] as const) {
 }
 
 test("DELETE handles a successful response with no content", async (t) => {
-    const request = t.mock.method(globalThis, "fetch", async () => new Response(null, { status: 204 }));
-    assert.equal(await createClient().delete(path), undefined);
+    const request = t.mock.fn<FetchImplementation>(async () => new Response(null, { status: 204 }));
+    assert.equal(await createClient(request).delete(path), undefined);
     assert.equal(request.mock.calls[0].arguments[1]?.method, "DELETE");
 });
 
 for (const status of [400, 401, 403, 404, 409, 503]) {
     test(`HTTP ${status} retains its status, method, path, and server message`, async (t) => {
-        t.mock.method(globalThis, "fetch", async () => Response.json({ errors: [{ message: "Request rejected." }] }, { status }));
-        await assert.rejects(createClient().post(path, { version: 7 }), (error: unknown) => {
+        const request = t.mock.fn<FetchImplementation>(async () => Response.json({ errors: [{ message: "Request rejected." }] }, { status }));
+        await assert.rejects(createClient(request).post(path, { version: 7 }), (error: unknown) => {
             assert.ok(error instanceof BitbucketApiError);
             assert.equal(error.statusCode, status);
             assert.equal(error.method, "POST");
@@ -67,8 +76,8 @@ const errorBodies = [
 ];
 for (const { body, expected } of errorBodies) {
     test(`HTTP error parsing handles ${JSON.stringify(body)}`, async (t) => {
-        t.mock.method(globalThis, "fetch", async () => new Response(body, { status: 502, statusText: "Bad Gateway" }));
-        await assert.rejects(createClient().get(path), (error: unknown) => {
+        const request = t.mock.fn<FetchImplementation>(async () => new Response(body, { status: 502, statusText: "Bad Gateway" }));
+        await assert.rejects(createClient(request).get(path), (error: unknown) => {
             assert.ok(error instanceof BitbucketApiError);
             assert.equal(error.message, `Bitbucket API request failed [502]: ${expected}`);
             return true;
@@ -77,13 +86,13 @@ for (const { body, expected } of errorBodies) {
 }
 
 test("an empty error response without a status description has a useful fallback", async (t) => {
-    t.mock.method(globalThis, "fetch", async () => new Response(null, { status: 500, statusText: "" }));
-    await assert.rejects(createClient().get(path), /Unknown Bitbucket error/);
+    const request = t.mock.fn<FetchImplementation>(async () => new Response(null, { status: 500, statusText: "" }));
+    await assert.rejects(createClient(request).get(path), /Unknown Bitbucket error/);
 });
 
 test("connection failures retain method and path without inventing an HTTP status", async (t) => {
-    t.mock.method(globalThis, "fetch", async () => { throw new Error("Connection reset."); });
-    await assert.rejects(createClient().get(path), (error: unknown) => {
+    const request = t.mock.fn<FetchImplementation>(async () => { throw new Error("Connection reset."); });
+    await assert.rejects(createClient(request).get(path), (error: unknown) => {
         assert.ok(error instanceof BitbucketApiError);
         assert.equal(error.statusCode, undefined);
         assert.equal(error.method, "GET");
@@ -96,8 +105,8 @@ test("connection failures retain method and path without inventing an HTTP statu
 test("response body failures retain the HTTP status, method, and path", async (t) => {
     const response = new Response("partial body", { status: 502 });
     t.mock.method(response, "text", async () => { throw new Error("Response stream closed."); });
-    t.mock.method(globalThis, "fetch", async () => response);
-    await assert.rejects(createClient().get(path), (error: unknown) => {
+    const request = t.mock.fn<FetchImplementation>(async () => response);
+    await assert.rejects(createClient(request).get(path), (error: unknown) => {
         assert.ok(error instanceof BitbucketApiError);
         assert.equal(error.statusCode, 502);
         assert.equal(error.method, "GET");
@@ -109,8 +118,8 @@ test("response body failures retain the HTTP status, method, and path", async (t
 
 for (const content of ["<html>Login page with private contents</html>", "{broken JSON"]) {
     test("successful non-JSON responses report a structured error without displaying their body", async (t) => {
-        const request = t.mock.method(globalThis, "fetch", async () => new Response(content));
-        await assert.rejects(createClient().get(path), (error: unknown) => {
+        const request = t.mock.fn<FetchImplementation>(async () => new Response(content));
+        await assert.rejects(createClient(request).get(path), (error: unknown) => {
             assert.ok(error instanceof BitbucketApiError);
             assert.equal(error.statusCode, 200);
             assert.equal(error.method, "GET");
@@ -128,7 +137,7 @@ for (const stage of ["connection", "response body"] as const) {
         t.mock.timers.enable({ apis: ["setTimeout"] });
         let signal: AbortSignal | undefined;
         let reading = false;
-        const request = t.mock.method(globalThis, "fetch", async (_input: string | URL | Request, options?: RequestInit) => {
+        const request = t.mock.fn<FetchImplementation>(async (_input: string | URL | Request, options?: RequestInit) => {
             signal = options?.signal ?? undefined;
             assert.ok(signal);
             const stalled = () => new Promise<never>((_resolve, reject) => {
@@ -139,7 +148,7 @@ for (const stage of ["connection", "response body"] as const) {
             t.mock.method(response, "text", () => { reading = true; return stalled(); });
             return response;
         });
-        const pending = createClient(50).post(path, { title: "Create once" });
+        const pending = createClient(request, 50).post(path, { title: "Create once" });
         await Promise.resolve();
         if (stage === "response body") assert.equal(reading, true);
         t.mock.timers.tick(49);
@@ -162,13 +171,13 @@ for (const stage of ["connection", "response body"] as const) {
 test("the default deadline is 60 seconds", async (t) => {
     t.mock.timers.enable({ apis: ["setTimeout"] });
     let signal: AbortSignal | undefined;
-    t.mock.method(globalThis, "fetch", (_input: string | URL | Request, options?: RequestInit) => {
+    const request = t.mock.fn<FetchImplementation>((_input: string | URL | Request, options?: RequestInit) => {
         signal = options?.signal ?? undefined;
         return new Promise<never>((_resolve, reject) => {
             signal!.addEventListener("abort", () => reject(signal!.reason), { once: true });
         });
     });
-    const pending = createClient().get(path);
+    const pending = createClient(request).get(path);
     t.mock.timers.tick(59999);
     assert.equal(signal?.aborted, false);
     t.mock.timers.tick(1);
@@ -179,11 +188,11 @@ for (const outcome of ["success", "HTTP failure", "parser failure"] as const) {
     test(`the deadline is cleared after ${outcome}`, async (t) => {
         t.mock.timers.enable({ apis: ["setTimeout"] });
         let signal: AbortSignal | undefined;
-        t.mock.method(globalThis, "fetch", async (_input: string | URL | Request, options?: RequestInit) => {
+        const request = t.mock.fn<FetchImplementation>(async (_input: string | URL | Request, options?: RequestInit) => {
             signal = options?.signal ?? undefined;
             return Response.json({ id: 42 }, { status: outcome === "HTTP failure" ? 409 : 200 });
         });
-        const pending = createClient(50).get(path, (value) => {
+        const pending = createClient(request, 50).get(path, (value) => {
             if (outcome === "parser failure") throw new Error("Expected a page.");
             return value;
         });
@@ -196,13 +205,14 @@ for (const outcome of ["success", "HTTP failure", "parser failure"] as const) {
 
 for (const timeout of [0, -1, 0.5, Number.NaN, Number.POSITIVE_INFINITY, 2147483648]) {
     test(`invalid timeout ${timeout} is rejected`, () => {
-        assert.throws(() => createClient(timeout), /timeout must be a positive integer/);
+        const request: FetchImplementation = async () => Response.json({});
+        assert.throws(() => createClient(request, timeout), /timeout must be a positive integer/);
     });
 }
 
 test("an endpoint requiring a JSON object rejects an empty successful response with its HTTP context", async (t) => {
-    t.mock.method(globalThis, "fetch", async () => new Response(null, { status: 204 }));
-    await assert.rejects(createClient().get(path, (value) => {
+    const request = t.mock.fn<FetchImplementation>(async () => new Response(null, { status: 204 }));
+    await assert.rejects(createClient(request).get(path, (value) => {
         if (value === undefined) throw new Error("Expected a Pull Request object.");
         return value;
     }), (error: unknown) => {

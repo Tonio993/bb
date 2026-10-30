@@ -10,11 +10,12 @@ import { CommanderError } from "commander";
 
 import { runCli } from "../src/cli/cli.ts";
 import type { CommandContext } from "../src/cli/command-context.ts";
-import { GitClient } from "../src/git/git-client.ts";
+import type { GitOperations } from "../src/git/git-client.ts";
+import { createGitStub } from "./helpers/git-stub.ts";
 
 const mainUrl = new URL("../src/main.ts", import.meta.url);
 
-function createContext(gitClient?: GitClient): CommandContext {
+function createContext(gitClient?: GitOperations): CommandContext {
     return {
         get tokenStore(): never { throw new Error("Token storage must remain lazy."); },
         get configStore(): never { throw new Error("Configuration must remain lazy."); },
@@ -108,13 +109,12 @@ for (const option of ["-C", "--path"]) {
     test(`global ${option} changes the action directory and restores it after success`, async (t) => {
         const directory = createDirectory(t);
         const originalDirectory = process.cwd();
-        const git = new GitClient("origin", () => { throw new Error("Git must be mocked."); }, () => { throw new Error("Git must be mocked."); });
         let actionDirectory: string | undefined;
-        const run = t.mock.method(git, "run", () => {
+        const run = t.mock.fn<GitOperations["run"]>(() => {
             actionDirectory = process.cwd();
             return 0;
         });
-        await runCli([option, directory, "git", "status"], createContext(git));
+        await runCli([option, directory, "git", "status"], createContext(createGitStub({ run })));
         assert.equal(actionDirectory, directory);
         assert.deepEqual(run.mock.calls[0].arguments, [["status"]]);
         assert.equal(process.cwd(), originalDirectory);
@@ -124,13 +124,12 @@ for (const option of ["-C", "--path"]) {
 test("global -C and Git -C are applied independently", async (t) => {
     const directory = createDirectory(t);
     const originalDirectory = process.cwd();
-    const git = new GitClient("origin", () => { throw new Error("Git must be mocked."); }, () => { throw new Error("Git must be mocked."); });
     let actionDirectory: string | undefined;
-    const run = t.mock.method(git, "run", () => {
+    const run = t.mock.fn<GitOperations["run"]>(() => {
         actionDirectory = process.cwd();
         return 0;
     });
-    await runCli(["-C", directory, "git", "-C", "nested repository", "status", "--short"], createContext(git));
+    await runCli(["-C", directory, "git", "-C", "nested repository", "status", "--short"], createContext(createGitStub({ run })));
     assert.equal(actionDirectory, directory);
     assert.deepEqual(run.mock.calls[0].arguments, [["-C", "nested repository", "status", "--short"]]);
     assert.equal(process.cwd(), originalDirectory);
@@ -138,13 +137,12 @@ test("global -C and Git -C are applied independently", async (t) => {
 
 test("Git -C alone is forwarded without changing the bb process directory", async (t) => {
     const originalDirectory = process.cwd();
-    const git = new GitClient("origin", () => { throw new Error("Git must be mocked."); }, () => { throw new Error("Git must be mocked."); });
     let actionDirectory: string | undefined;
-    const run = t.mock.method(git, "run", () => {
+    const run = t.mock.fn<GitOperations["run"]>(() => {
         actionDirectory = process.cwd();
         return 0;
     });
-    await runCli(["git", "-C", "repository with spaces", "status"], createContext(git));
+    await runCli(["git", "-C", "repository with spaces", "status"], createContext(createGitStub({ run })));
     assert.equal(actionDirectory, originalDirectory);
     assert.deepEqual(run.mock.calls[0].arguments, [["-C", "repository with spaces", "status"]]);
 });

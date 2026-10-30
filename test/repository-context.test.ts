@@ -3,7 +3,6 @@ import { test } from "node:test";
 import type { TestContext } from "node:test";
 
 import type { BbConfig } from "../src/config/config.ts";
-import { GitClient } from "../src/git/git-client.ts";
 import { GitCommandError } from "../src/git/git-command-error.ts";
 import { resolveRepositoryContext } from "../src/repository/repository-context.ts";
 
@@ -12,8 +11,8 @@ function createFixture(t: TestContext) {
         bitbucket: { url: "https://bitbucket.example", projectKey: " PROJECT ", defaultReviewers: [] },
         git: { remote: "origin" },
     };
-    const git = new GitClient("origin", () => { throw new Error("Repository discovery must not request a token."); }, () => config.bitbucket.url);
-    const currentRepository = t.mock.method(git, "currentRepository", () => "payments");
+    const currentRepository = t.mock.fn(() => "payments");
+    const git = { currentRepository };
     return { config, git, currentRepository };
 }
 

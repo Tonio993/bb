@@ -2,13 +2,13 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { TestContext } from "node:test";
 
-import { BitbucketClient } from "../src/bitbucket/bitbucket-client.ts";
+import { BitbucketClient, type FetchImplementation } from "../src/bitbucket/bitbucket-client.ts";
 import type { BitbucketPage, BitbucketPullRequest, BitbucketRepository } from "../src/bitbucket/bitbucket-types.ts";
 import { getOpenPullRequest, getOpenPullRequests } from "../src/bitbucket/pull-requests.ts";
 import { getProjectRepositories } from "../src/bitbucket/repositories.ts";
 import { runCli } from "../src/cli/cli.ts";
 import type { CommandContext } from "../src/cli/command-context.ts";
-import { GitClient } from "../src/git/git-client.ts";
+import { createGitStub } from "./helpers/git-stub.ts";
 
 const root = "/rest/api/latest/projects/PROJECT/repos";
 const config = {
@@ -19,7 +19,7 @@ const config = {
 function createApi(t: TestContext) {
     const responses: { path: string; body: unknown }[] = [];
     const requests: string[] = [];
-    t.mock.method(globalThis, "fetch", async (input: string | URL | Request) => {
+    const request = t.mock.fn<FetchImplementation>(async (input: string | URL | Request) => {
         const url = new URL(String(input));
         const path = `${url.pathname}${url.search}`;
         requests.push(path);
@@ -28,7 +28,7 @@ function createApi(t: TestContext) {
         assert.equal(path, response.path);
         return Response.json(response.body);
     });
-    return { client: new BitbucketClient(config.bitbucket, () => "test-token"), responses, requests };
+    return { client: new BitbucketClient(config.bitbucket, () => "test-token", { fetch: request }), responses, requests };
 }
 
 function repository(name: string, slug: string): BitbucketRepository {
@@ -168,9 +168,10 @@ for (const nextPageStart of [undefined, 0, -1, 0.5]) {
 }
 
 function createContext(t: TestContext, client: BitbucketClient, projectWide: boolean): CommandContext {
-    const git = new GitClient("origin", () => { throw new Error("Discovery must not request a Git token."); }, () => config.bitbucket.url);
-    t.mock.method(git, "currentRepository", () => "payments");
-    t.mock.method(git, "currentBranch", () => { throw new Error("Both branches are already known."); });
+    const git = createGitStub({
+        currentRepository: t.mock.fn(() => "payments"),
+        currentBranch: () => { throw new Error("Both branches are already known."); },
+    });
     return {
         config, bitbucketClient: client,
         get tokenStore(): never { throw new Error("Token storage is already injected in the client."); },

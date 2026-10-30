@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { TestContext } from "node:test";
 import { BitbucketApiError } from "../src/bitbucket/bitbucket-api-error.ts";
-import { BitbucketClient } from "../src/bitbucket/bitbucket-client.ts";
+import { BitbucketClient, type FetchImplementation } from "../src/bitbucket/bitbucket-client.ts";
 import { iterateBitbucketPages } from "../src/bitbucket/pagination.ts";
 
 function page(values: unknown[], start = 0, nextPageStart?: number) {
@@ -11,14 +11,14 @@ function page(values: unknown[], start = 0, nextPageStart?: number) {
 
 function api(t: TestContext, responses: { body: unknown; status?: number }[]) {
     const paths: string[] = [];
-    t.mock.method(globalThis, "fetch", async (input: string | URL | Request) => {
+    const request = t.mock.fn<FetchImplementation>(async (input: string | URL | Request) => {
         const url = new URL(String(input));
         paths.push(`${url.pathname}${url.search}`);
         const response = responses.shift();
         assert.ok(response, "Unexpected page request.");
         return Response.json(response.body, { status: response.status ?? 200 });
     });
-    const client = new BitbucketClient({ url: "https://bitbucket.example/bitbucket", projectKey: "PROJECT", defaultReviewers: [] }, () => "test-token");
+    const client = new BitbucketClient({ url: "https://bitbucket.example/bitbucket", projectKey: "PROJECT", defaultReviewers: [] }, () => "test-token", { fetch: request });
     const parseNumber = (value: unknown): number => {
         if (typeof value !== "number") throw new Error("Expected a number.");
         return value;

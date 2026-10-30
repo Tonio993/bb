@@ -4,12 +4,13 @@ import { test } from "node:test";
 import type { TestContext } from "node:test";
 
 import { BitbucketApiError } from "../src/bitbucket/bitbucket-api-error.ts";
-import { BitbucketClient } from "../src/bitbucket/bitbucket-client.ts";
+import { BitbucketClient, type FetchImplementation } from "../src/bitbucket/bitbucket-client.ts";
 import type { BitbucketPullRequest } from "../src/bitbucket/bitbucket-types.ts";
 import type { CommandContext } from "../src/cli/command-context.ts";
 import { registerCreatePrCommand } from "../src/commands/create-pr-command.ts";
 import type { BbConfig } from "../src/config/config.ts";
-import { GitClient } from "../src/git/git-client.ts";
+import type { GitOperations } from "../src/git/git-client.ts";
+import { createGitStub } from "./helpers/git-stub.ts";
 import { GitCommandError } from "../src/git/git-command-error.ts";
 import type { GitCommit } from "../src/git/git-client.ts";
 
@@ -23,19 +24,18 @@ function createFixture(t: TestContext) {
         git: { remote: "upstream" },
     };
     const events: string[] = [];
-    const git = new GitClient("upstream", () => { throw new Error("Git must be mocked."); }, () => config.bitbucket.url);
-    const currentBranch = t.mock.method(git, "currentBranch", () => "feature/current");
-    const currentRepository = t.mock.method(git, "currentRepository", () => "payments");
-    const fetch = t.mock.method(git, "fetch", () => { events.push("fetch"); });
-    const branchExists = t.mock.method(git, "remoteBranchExists", (branch: string) => {
+    const currentBranch = t.mock.fn(() => "feature/current");
+    const currentRepository = t.mock.fn(() => "payments");
+    const fetch = t.mock.fn<GitOperations["fetch"]>(() => { events.push("fetch"); });
+    const branchExists = t.mock.fn<GitOperations["assertRemoteBranchExists"]>((branch) => {
         events.push(`branch:${branch}`);
-        return true;
     });
     const commits: GitCommit[] = [{ subject: "Validate payments", body: "Check account\nReject invalid amounts" }];
-    const readCommits = t.mock.method(git, "commitsBetween", () => {
+    const readCommits = t.mock.fn<GitOperations["commitsBetween"]>(() => {
         events.push("commits");
         return commits;
     });
+    const git = createGitStub({ currentBranch, currentRepository, fetch, assertRemoteBranchExists: branchExists, commitsBetween: readCommits });
     const repository = { name: "Payments", slug: "payments", project: { key: "PROJECT" } };
     const pullRequest: BitbucketPullRequest = {
         id: 42, version: 0, state: "OPEN", reviewers: [],
@@ -43,7 +43,7 @@ function createFixture(t: TestContext) {
         toRef: { id: "refs/heads/develop", displayId: "develop", repository },
         links: { self: [{ href: "https://bitbucket.example/bitbucket/projects/PROJECT/repos/payments/pull-requests/42" }] },
     };
-    const request = t.mock.method(globalThis, "fetch", async () => {
+    const request = t.mock.fn<FetchImplementation>(async () => {
         events.push("create");
         return Response.json(pullRequest, { status: 201 });
     });
@@ -52,7 +52,7 @@ function createFixture(t: TestContext) {
         get tokenStore(): never { throw new Error("Token storage is already injected in the clients."); },
         config,
         gitClient: git,
-        bitbucketClient: new BitbucketClient(config.bitbucket, () => "test-token"),
+        bitbucketClient: new BitbucketClient(config.bitbucket, () => "test-token", { fetch: request }),
         get configStore(): never { throw new Error("Configuration is already loaded."); },
     };
     const program = new Command().exitOverride().configureOutput({ writeErr: () => {} });
@@ -73,7 +73,7 @@ test("create-pr fetches and validates remote branches before generating content 
     assert.equal(fixture.currentBranch.mock.callCount(), 1);
     assert.deepEqual(fixture.fetch.mock.calls[0].arguments, ["upstream"]);
     assert.deepEqual(fixture.branchExists.mock.calls.map(({ arguments: args }) => args), [
-        ["feature/current", "upstream"], ["develop", "upstream"],
+        ["feature/current", "source", "upstream"], ["develop", "target", "upstream"],
     ]);
     assert.deepEqual(fixture.readCommits.mock.calls[0].arguments, [
         "refs/remotes/upstream/develop", "refs/remotes/upstream/feature/current",
@@ -166,8 +166,9 @@ for (const args of [[], ["develop", "develop"], ["feature/test", "--target-branc
 for (const missingBranch of ["feature/current", "develop"]) {
     test(`a missing remote branch '${missingBranch}' prevents creating a Pull Request`, async (t) => {
         const fixture = createFixture(t);
-        fixture.branchExists.mock.mockImplementation((branch: string) => branch !== missingBranch);
-        await assert.rejects(fixture.run(["develop"]), /Remote (source|target) branch .* does not exist/);
+        const failure = new Error(`Missing remote branch: ${missingBranch}`);
+        fixture.branchExists.mock.mockImplementation((branch) => { if (branch === missingBranch) throw failure; });
+        await assert.rejects(fixture.run(["develop"]), (error: unknown) => error === failure);
         assert.equal(fixture.fetch.mock.callCount(), 1);
         assert.equal(fixture.readCommits.mock.callCount(), 0);
         assert.equal(fixture.request.mock.callCount(), 0);

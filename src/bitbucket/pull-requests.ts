@@ -1,5 +1,5 @@
-import {
-    BitbucketClient,
+import type {
+    BitbucketApi,
 } from "./bitbucket-client.ts";
 
 import type {
@@ -38,7 +38,7 @@ export type BitbucketPullRequestWithRepository =
 
 
 export async function getOpenPullRequest(
-    client: BitbucketClient,
+    client: Pick<BitbucketApi, "get">,
     options: GetOpenPullRequestOptions,
 ): Promise<BitbucketPullRequest | undefined> {
     const {
@@ -68,7 +68,7 @@ export async function getOpenPullRequest(
 
 
 export async function getOpenPullRequests(
-    client: BitbucketClient,
+    client: Pick<BitbucketApi, "get">,
     options: GetOpenPullRequestsOptions,
 ): Promise<BitbucketPullRequestWithRepository[]> {
     const repositories =
@@ -109,7 +109,7 @@ export async function getOpenPullRequests(
 
 
 async function getRepositoryOpenPullRequests(
-    client: BitbucketClient,
+    client: Pick<BitbucketApi, "get">,
     projectKey: string,
     repository: BitbucketRepository,
     sourceBranch: string,
@@ -144,7 +144,7 @@ async function getRepositoryOpenPullRequests(
 }
 
 function getRepositoryPullRequestPages(
-    client: BitbucketClient,
+    client: Pick<BitbucketApi, "get">,
     projectKey: string,
     repository: string,
 ) {
@@ -204,7 +204,7 @@ export type CreatePullRequestOptions = {
 
 
 export async function createPullRequest(
-    client: BitbucketClient,
+    client: Pick<BitbucketApi, "post">,
     options: CreatePullRequestOptions,
 ): Promise<BitbucketPullRequest> {
     const encodedProjectKey =
@@ -265,7 +265,7 @@ export type PullRequestIdentity = {
 };
 
 export async function getPullRequest(
-    client: BitbucketClient,
+    client: Pick<BitbucketApi, "get">,
     identity: PullRequestIdentity,
 ): Promise<BitbucketPullRequest> {
     return client.get(
@@ -281,7 +281,7 @@ export type MergePullRequestBody = {
 };
 
 export async function mergePullRequest(
-    client: BitbucketClient,
+    client: Pick<BitbucketApi, "post">,
     identity: PullRequestIdentity,
     body: MergePullRequestBody,
 ): Promise<BitbucketPullRequest> {
@@ -293,7 +293,7 @@ export async function mergePullRequest(
 }
 
 export async function getPullRequestCommitMessageSuggestion(
-    client: BitbucketClient,
+    client: Pick<BitbucketApi, "get">,
     identity: PullRequestIdentity,
 ): Promise<BitbucketCommitMessageSuggestion> {
     return client.get(

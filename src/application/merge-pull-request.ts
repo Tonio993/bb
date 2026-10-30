@@ -1,4 +1,4 @@
-import type { BitbucketClient } from "../bitbucket/bitbucket-client.ts";
+import type { BitbucketApi } from "../bitbucket/bitbucket-client.ts";
 import type { BitbucketPullRequest } from "../bitbucket/bitbucket-types.ts";
 import {
     getOpenPullRequest,
@@ -17,7 +17,7 @@ export type MergeOpenPullRequestOptions = GetOpenPullRequestOptions & {
 };
 
 export async function mergeOpenPullRequest(
-    client: BitbucketClient,
+    client: BitbucketApi,
     options: MergeOpenPullRequestOptions,
 ): Promise<BitbucketPullRequest> {
     const match = await getOpenPullRequest(client, options);
@@ -70,7 +70,7 @@ export async function mergeOpenPullRequest(
     return merged;
 }
 
-async function completePullRequestTasks(client: BitbucketClient, identity: PullRequestIdentity): Promise<void> {
+async function completePullRequestTasks(client: BitbucketApi, identity: PullRequestIdentity): Promise<void> {
     // Collect every page before updates so resolving tasks cannot shift subsequent pages.
     const tasks = await getPullRequestTasks(client, identity);
     for (const task of tasks) {

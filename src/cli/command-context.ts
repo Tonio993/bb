@@ -1,7 +1,7 @@
 import type { TokenStore } from "../auth/token-store.ts";
 
 import type {
-    BitbucketClient,
+    BitbucketApi,
 } from "../bitbucket/bitbucket-client.ts";
 
 import type {
@@ -10,19 +10,19 @@ import type {
 } from "../config/config.ts";
 
 import type {
-    GitClient,
+    GitOperations,
 } from "../git/git-client.ts";
 
 
 export type CommandContext = {
-    readonly tokenStore: TokenStore;
-    readonly configStore: ConfigStore;
+    readonly tokenStore: Pick<TokenStore, "source" | "set" | "delete">;
+    readonly configStore: Pick<ConfigStore, "path" | "get" | "set" | "save" | "snapshot">;
 
     readonly config: BbConfig;
 
     readonly bitbucketClient:
-        BitbucketClient;
+        BitbucketApi;
 
     readonly gitClient:
-        GitClient;
+        GitOperations;
 };

@@ -21,7 +21,7 @@ export type ResolveRepositoryContextOptions = {
 
 export function resolveRepositoryContext(
     config: BbConfig,
-    gitClient: GitClient,
+    gitClient: Pick<GitClient, "currentRepository">,
     options: ResolveRepositoryContextOptions = {},
 ): RepositoryContext {
     const projectKey =

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { TestContext } from "node:test";
 import { BitbucketApiError } from "../src/bitbucket/bitbucket-api-error.ts";
-import { BitbucketClient } from "../src/bitbucket/bitbucket-client.ts";
+import { BitbucketClient, type FetchImplementation } from "../src/bitbucket/bitbucket-client.ts";
 import { createPullRequest, getOpenPullRequest, getPullRequest } from "../src/bitbucket/pull-requests.ts";
 import { getProjectRepositories } from "../src/bitbucket/repositories.ts";
 import { parseCommitMessageSuggestion, parseTask } from "../src/bitbucket/response-parsers.ts";
@@ -18,8 +18,8 @@ const pr = {
 const page = { values: [repository], size: 1, limit: 100, start: 0, isLastPage: true };
 
 function api(t: TestContext, body: unknown, status = 200) {
-    const request = t.mock.method(globalThis, "fetch", async () => Response.json(body, { status }));
-    const client = new BitbucketClient({ url: "https://bitbucket.example", projectKey: "PROJECT", defaultReviewers: [] }, () => "test-token");
+    const request = t.mock.fn<FetchImplementation>(async () => Response.json(body, { status }));
+    const client = new BitbucketClient({ url: "https://bitbucket.example", projectKey: "PROJECT", defaultReviewers: [] }, () => "test-token", { fetch: request });
     return { client, request };
 }
 

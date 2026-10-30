@@ -1,6 +1,7 @@
 import {
     spawnSync,
 } from "node:child_process";
+import type { SpawnSyncOptionsWithStringEncoding } from "node:child_process";
 
 import {
     basename,
@@ -33,21 +34,38 @@ export type GitCommit = {
     body: string;
 };
 
+export type GitOperations = Pick<GitClient,
+    "run" | "currentBranch" | "currentRepository" | "fetch" | "assertRemoteBranchExists" | "commitsBetween"
+>;
+
+export type GitCommandRunner = (command: string, args: string[], options: SpawnSyncOptionsWithStringEncoding) => {
+    stdout: string | null;
+    stderr: string | null;
+    status: number | null;
+    signal: NodeJS.Signals | null;
+    error?: Error;
+};
+
+type GitClientOptions = { execute?: GitCommandRunner };
+
 export class GitClient {
     readonly remote: string;
 
     private readonly tokenProvider: TokenProvider;
     private readonly bitbucketUrlProvider: BitbucketUrlProvider;
+    private readonly executeCommand: GitCommandRunner;
 
 
     constructor(
         remote: string,
         tokenProvider: TokenProvider,
         bitbucketUrlProvider: BitbucketUrlProvider,
+        options: GitClientOptions = {},
     ) {
         this.remote = remote;
         this.tokenProvider = tokenProvider;
         this.bitbucketUrlProvider = bitbucketUrlProvider;
+        this.executeCommand = options.execute ?? ((command, args, settings) => spawnSync(command, args, settings));
     }
 
 
@@ -160,7 +178,7 @@ export class GitClient {
         authenticated = false,
         stdio: "inherit" | "pipe" = "pipe",
     ): GitExecutionResult {
-        const result = spawnSync("git", args, {
+        const result = this.executeCommand("git", args, {
             encoding: "utf8",
             stdio,
             shell: false,
