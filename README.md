@@ -9,7 +9,7 @@ Il progetto implementa configurazione globale, pass-through Git, ricerca, creazi
 - Node.js 24 LTS o una versione successiva compatibile.
 - npm.
 - Git disponibile nel `PATH` per i comandi che lavorano sul repository locale.
-- Windows e `powershell.exe` per le operazioni autenticate con il token store attuale.
+- Per salvare il token: `powershell.exe` su Windows, Keychain su macOS, oppure `secret-tool` e una sessione Secret Service su Linux. In alternativa, `BB_TOKEN` permette l'autenticazione senza portachiavi.
 
 Dalla directory di questo progetto:
 
@@ -106,19 +106,33 @@ Il file di configurazione risiede fuori dai repository:
 
 ## Token Bitbucket
 
-Il token è separato dalla configurazione ed è letto da `%APPDATA%\bb\token.dat`.
-
-La versione Node riutilizza il file cifrato con Windows DPAPI dalla versione PowerShell. Per crearlo o aggiornarlo, usare lo script `setup/bb-set-token.ps1` del progetto PowerShell, con lo stesso account Windows che esegue la CLI:
+Il token è separato da `config.json`. Per impostarlo, controllarne la provenienza o cancellare quello salvato:
 
 ```powershell
-powershell.exe -NoProfile -File "C:\path\to\BitBucketHelper\setup\bb-set-token.ps1"
+bb token set
+bb token status
+bb token delete
 ```
 
-Lo script chiede il token in modo interattivo. Non è incluso in questo repository. La CLI Node non implementa ancora un comando per impostare il token.
+Dal checkout usare, ad esempio, `node src/main.ts token set`. Questi comandi funzionano anche prima di `config init`.
 
-Node invoca temporaneamente PowerShell per decifrare il file. Il token viene riutilizzato in memoria durante la stessa esecuzione e la cache viene svuotata al termine. Le operazioni locali non ne richiedono la decifratura.
+`token set` chiede il token senza visualizzarlo, senza inserirlo nella history del prompt e ripristinando il terminale anche con Ctrl+C o EOF. Non accetta il token come argomento della command line. Per ricevere il valore da un secret manager tramite una pipe, usare `bb token set --stdin`.
 
-Configurazione e operazioni Git locali possono funzionare anche su Linux e macOS; le operazioni che richiedono il token Bitbucket sono attualmente supportate solo su Windows.
+| Piattaforma | Memorizzazione | Requisiti |
+| --- | --- | --- |
+| Windows | DPAPI, `%APPDATA%\bb\token.dat` con fallback sulla directory roaming del profilo | `powershell.exe` e lo stesso account Windows che possiede il token |
+| macOS | Keychain, servizio `bb.bitbucket`, account `token` | `/usr/bin/security` e accesso al portachiavi dell'utente |
+| Linux | Secret Service, attributi `service=bb.bitbucket` e `account=token` | `secret-tool` di libsecret e una sessione Secret Service disponibile e sbloccata |
+
+Su Windows il formato rimane compatibile con il file creato dalla CLI PowerShell: il token esistente continua a funzionare, senza migrazione. Anche le modifiche e la cancellazione operate dalla CLI Node riguardano quel file.
+
+Su Linux installare `secret-tool` tramite il gestore pacchetti della distribuzione e usare un servizio compatibile, ad esempio GNOME Keyring. Per CI, container, SSH o sessioni senza portachiavi, fornire la variabile `BB_TOKEN` tramite il secret manager dell'ambiente.
+
+`BB_TOKEN` ha precedenza sul token salvato su tutte le piattaforme. Non viene persistita dalla CLI. `token set` e `token delete` modificano soltanto la memorizzazione persistente: finché `BB_TOKEN` è definita, rimane la credenziale attiva. `token status` stampa solo la sorgente (`BB_TOKEN` o il nome del backend), senza mostrare il valore; restituisce exit code `1` se nessun token è configurato.
+
+I token non possono essere vuoti, contenere whitespace o caratteri di controllo, oppure superare 1024 byte. L'input da stdin può terminare con un newline. I secret vengono passati ai tool nativi attraverso stdin, mai come argomenti; le diagnostiche native vengono sostituite da messaggi che non espongono il token. Se il portachiavi è assente, bloccato o non accessibile, il comando mostra come correggere il problema o usare `BB_TOKEN`; non salva un file in chiaro come ripiego.
+
+Il token persistente viene letto solo alla prima operazione autenticata e riutilizzato in memoria durante l'esecuzione. La cache è condivisa dai client Git e Bitbucket e viene svuotata al termine. Help, configurazione e operazioni Git locali non richiedono accesso al portachiavi.
 
 ## Repository, directory e branch
 
@@ -149,6 +163,9 @@ Quando entrambi i branch sono specificati, la CLI evita di interrogare il branch
 | `config [key] [value]` | Elenca, legge o modifica la configurazione |
 | `config list` | Elenca impostazioni e percorso del file |
 | `config init` | Configura le impostazioni in modo interattivo |
+| `token set [--stdin]` | Salva il token con input nascosto o da una pipe |
+| `token [status]` | Mostra la sorgente della credenziale attiva |
+| `token delete` | Elimina il token persistente |
 | `git <args...>` | Inoltra gli argomenti a Git |
 | `get-pr-url [source] [target]` | Cerca una PR aperta nel repository corrente |
 | `get-pr-urls <source> <target>` | Cerca PR aperte attraverso i repository di un progetto |
@@ -252,10 +269,18 @@ I test usano il runner nativo Node, client sostituibili e risposte HTTP simulate
 
 La verifica del pacchetto installabile è separata e si avvia con `npm run test:package`.
 
+I backend macOS e Linux e gli errori dei tool nativi sono verificati tramite simulazioni. Il test reale DPAPI su Windows è opzionale, usa una directory temporanea e un token fittizio e può essere abilitato così:
+
+```powershell
+$env:BB_TEST_NATIVE_TOKEN_STORE = "1"
+node --test test/token-store.test.ts
+Remove-Item Env:BB_TEST_NATIVE_TOKEN_STORE
+```
+
 Le regole architetturali e lo stato del porting sono descritti in [AGENTS.md](AGENTS.md).
 
 ## Attività rimanenti
 
 - Distribuire il tarball validato attraverso il canale interno scelto per le release.
 - Verificare i flussi autenticati contro il server Bitbucket aziendale: le verifiche automatizzate attuali sono offline.
-- Valutare in seguito un token store portabile, mantenendo quello DPAPI durante il porting funzionale.
+- Verificare dal vivo Keychain e Secret Service nei rispettivi ambienti di destinazione; la loro copertura automatizzata attuale usa tool simulati.

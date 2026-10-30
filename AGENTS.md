@@ -139,6 +139,7 @@ src/
 ├── main.ts
 │
 ├── auth/
+│   ├── token-input.ts
 │   └── token-store.ts
 │
 ├── bitbucket/
@@ -155,6 +156,7 @@ src/
 ├── commands/
 │   ├── index.ts
 │   ├── config-command.ts
+│   ├── token-command.ts
 │   ├── git-command.ts
 │   ├── get-pr-url-command.ts
 │   ├── get-pr-urls-command.ts
@@ -226,6 +228,7 @@ Esempio:
 
 ```typescript
 export type CommandContext = {
+    readonly tokenStore: TokenStore;
     readonly configStore: ConfigStore;
     readonly config: BbConfig;
     readonly bitbucketClient: BitbucketClient;
@@ -489,7 +492,19 @@ Configuration missing.
 
 Il token Bitbucket è un secret e non deve essere salvato dentro `config.json`.
 
-Attualmente viene riutilizzato il token della versione PowerShell, memorizzato in:
+`TokenStore` è creato nel composition root e passato ai comandi tramite `CommandContext`. I client Git e Bitbucket ricevono un provider esplicito che legge dallo stesso store, senza cache globali implicite.
+
+Priorità di lettura:
+
+```text
+BB_TOKEN, se definita
+  ↓
+store sicuro della piattaforma
+```
+
+La variabile d'ambiente permette l'autenticazione anche in CI e sessioni senza portachiavi e non viene salvata dalla CLI.
+
+Su Windows viene riutilizzato il token della versione PowerShell, memorizzato in:
 
 ```text
 %APPDATA%\bb\token.dat
@@ -511,20 +526,22 @@ DPAPI
 Bitbucket token
 ```
 
-Questa implementazione è transitoria.
-
-Non cambiare il token store durante il porting funzionale se non necessario.
-
-In futuro potrà essere introdotta un'astrazione portabile, ad esempio:
+I backend attuali sono:
 
 ```text
 TokenStore
-├── Windows Credential Manager / DPAPI
+├── Windows DPAPI, compatibile con token.dat esistente
 ├── macOS Keychain
-└── Linux Secret Service
+└── Linux Secret Service tramite secret-tool
 ```
 
-Il token deve essere mantenuto in memoria solo per il tempo necessario.
+Non introdurre un ripiego su file in chiaro. Su macOS usare il servizio `bb.bitbucket` e l'account `token`; su Linux gli attributi `service=bb.bitbucket` e `account=token`.
+
+La CLI espone `token set`, `token status` e `token delete`. L'impostazione usa input nascosto oppure `--stdin`; il token non deve essere accettato come argomento della command line, visualizzato nell'output o incluso nelle diagnostiche. Gli aggiornamenti nativi ricevono il secret tramite stdin. Non inoltrare stderr dei tool nativi senza filtraggio.
+
+`token status` mostra soltanto la sorgente attiva e restituisce exit code `1` quando il token manca. Impostazione e cancellazione riguardano lo store persistente e non modificano `BB_TOKEN`.
+
+Il token persistente viene caricato lazy e mantenuto in cache per la durata dell'esecuzione, con cleanup nel `finally` del bootstrap. Help, configurazione e Git locale non devono avviare i backend. I test ordinari devono simulare i tool nativi; la prova reale DPAPI usa solo un token fittizio isolato e richiede `BB_TEST_NATIVE_TOKEN_STORE=1`.
 
 ---
 
@@ -1285,7 +1302,8 @@ GitClient
 BitbucketClient
 BitbucketApiError
 GitCommandError
-token store DPAPI temporaneo
+TokenStore multipiattaforma con override BB_TOKEN
+token set / token status / token delete e input nascosto
 ConfigStore globale e configurazione lazy
 config / config list / config init
 pass-through Git con autenticazione selettiva
@@ -1321,7 +1339,7 @@ Il pacchetto rimane privato e dichiara il launcher `bb` tramite `bin`. La prepar
 
 Eseguire `npm run test:package` quando cambiano packaging, build, dipendenze runtime o launcher. Questo controllo costruisce un tarball e verifica l'installazione con sole dipendenze di produzione in un prefisso temporaneo. Deve rimanere separato dalla suite offline `npm test` e non deve sostituire l'installazione globale dell'utente o leggere la configurazione reale.
 
-Il token store DPAPI rimane transitorio e limita le operazioni autenticate a Windows. Una soluzione portabile e l'eventuale cancellazione del branch source sono attività future da valutare separatamente.
+DPAPI rimane compatibile con la CLI PowerShell. Keychain e Secret Service sono coperti da test con tool simulati e richiedono verifica nativa negli ambienti di destinazione. L'eventuale cancellazione del branch source è una funzionalità futura da valutare separatamente.
 
 ---
 
