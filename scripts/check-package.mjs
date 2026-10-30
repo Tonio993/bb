@@ -40,15 +40,21 @@ try {
     const expectedRuntime = readdirSync(join(projectRoot, "src"), { recursive: true })
         .filter((path) => path.endsWith(".ts"))
         .map((path) => `dist/${path.replaceAll("\\", "/").replace(/\.ts$/, ".js")}`);
-    assert.deepEqual(packed.files.map(({ path }) => path).sort(), [
+    const packedPaths = packed.files.map(({ path }) => path);
+    assert.deepEqual(packed.bundled, ["commander"]);
+    assert.deepEqual(packedPaths.filter((path) => !path.startsWith("node_modules/commander/")).sort(), [
         ...expectedRuntime, "README.md", "package.json",
-    ].sort(), "The package must contain only runtime JavaScript, its manifest, and README.");
+    ].sort(), "The package must contain only runtime JavaScript, its manifest, README, and bundled Commander.");
+    for (const file of ["package.json", "index.js", "lib/command.js", "LICENSE"]) {
+        assert.ok(packedPaths.includes(`node_modules/commander/${file}`), `Bundled Commander is missing ${file}.`);
+    }
 
     const prefix = join(fixture, "installed cli");
-    console.log("Installing the tarball into an isolated prefix...");
+    console.log("Installing the tarball offline with an empty cache into an isolated prefix...");
     npm([
         "install", "--global", "--prefix", prefix, join(artifacts, packed.filename),
-        "--omit=dev", "--ignore-scripts", "--no-audit", "--no-fund", "--prefer-offline",
+        "--omit=dev", "--ignore-scripts", "--no-audit", "--no-fund", "--offline",
+        "--cache", join(fixture, "empty npm cache"),
     ]);
 
     const installedPackage = process.platform === "win32"
@@ -56,6 +62,8 @@ try {
         : join(prefix, "lib", "node_modules", "bb");
     const manifest = JSON.parse(readFileSync(join(installedPackage, "package.json"), "utf8"));
     assert.equal(manifest.bin.bb, "dist/main.js");
+    assert.deepEqual(manifest.bundleDependencies, ["commander"]);
+    assert.equal(JSON.parse(readFileSync(join(installedPackage, "node_modules", "commander", "package.json"), "utf8")).name, "commander");
     assert.ok(readFileSync(join(installedPackage, "dist", "main.js"), "utf8").startsWith("#!/usr/bin/env node\n"));
     assert.equal(existsSync(join(installedPackage, "src")), false);
     assert.equal(existsSync(join(installedPackage, "node_modules", "typescript")), false);

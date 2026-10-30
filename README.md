@@ -38,7 +38,9 @@ npm pack
 
 Questa compilazione serve alla distribuzione: [Node.js 24 non esegue il type stripping sotto `node_modules`](https://r2.nodejs.org/docs/v24.0.2/api/typescript.html). Lo sviluppo continua a usare TypeScript diretto e `npm start` non richiede il build.
 
-L'archivio contiene il manifest, il README e i file JavaScript di `dist/`. Sorgenti TypeScript, test, configurazioni di sviluppo, token e dipendenze di sviluppo sono esclusi. Commander viene installato come dipendenza runtime da npm.
+L'archivio contiene il manifest, il README, i file JavaScript di `dist/` e Commander completo della sua licenza in `node_modules/commander/`, incluso tramite `bundleDependencies`. Sorgenti TypeScript dell'applicazione, test, configurazioni di sviluppo, token e dipendenze di sviluppo sono esclusi. Commander proviene dalle dipendenze installate nel checkout: eseguire `npm ci` prima di preparare il pacchetto da un nuovo checkout.
+
+Il tarball può essere installato senza accesso al registry npm, anche con cache vuota. Sul computer di destinazione servono comunque Node.js e npm. Per imporre l'installazione offline aggiungere `--offline --no-audit --no-fund` al comando seguente.
 
 Per installare il tarball:
 
@@ -65,7 +67,7 @@ npm uninstall --global bb
 
 La distribuzione interna avviene tramite tarball. `private: true` mantiene il blocco alla pubblicazione con `npm publish`.
 
-`npm run test:package` costruisce un archivio temporaneo, ne controlla i file e lo installa con sole dipendenze di produzione e script di installazione disabilitati. Verifica il launcher da una directory esterna al checkout, l'help di `merge-pr` e una lettura della configurazione isolata. Il prefisso di prova viene rimosso al termine; l'installazione globale dell'utente e la configurazione reale non vengono modificate. Il controllo usa la cache npm e, quando necessario, il registry configurato per recuperare le dipendenze.
+`npm run test:package` costruisce un archivio temporaneo, ne controlla i file e la presenza di Commander con la sua licenza, quindi lo installa offline con cache vuota, sole dipendenze di produzione e script di installazione disabilitati. Verifica il launcher da una directory esterna al checkout, l'help di `merge-pr`, lo stato del token tramite un valore fittizio in `BB_TOKEN` e una lettura della configurazione isolata. Il prefisso di prova e la cache temporanea vengono rimossi al termine; l'installazione globale dell'utente e la configurazione reale non vengono modificate.
 
 Per generare solo i file di distribuzione, usare `npm run build`.
 

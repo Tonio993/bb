@@ -1320,7 +1320,7 @@ paginazione e wildcard repository
 test di dominio, client e CLI
 README operativo
 build JavaScript di distribuzione e launcher npm bb
-tarball con allowlist dei soli file runtime e README
+tarball con allowlist dei file runtime, README e Commander incluso tramite bundleDependencies
 verifica separata del pacchetto installato in un prefisso temporaneo
 ```
 
@@ -1337,7 +1337,7 @@ verifica dei flussi autenticati sul server aziendale
 
 Il pacchetto rimane privato e dichiara il launcher `bb` tramite `bin`. La preparazione usa `npm pack`; l'installazione usa `npm install --global` sul tarball. Durante lo sviluppo continuare a usare `node src/main.ts ...`.
 
-Eseguire `npm run test:package` quando cambiano packaging, build, dipendenze runtime o launcher. Questo controllo costruisce un tarball e verifica l'installazione con sole dipendenze di produzione in un prefisso temporaneo. Deve rimanere separato dalla suite offline `npm test` e non deve sostituire l'installazione globale dell'utente o leggere la configurazione reale.
+Eseguire `npm run test:package` quando cambiano packaging, build, dipendenze runtime o launcher. Questo controllo costruisce un tarball, verifica Commander incluso con la sua licenza e prova l'installazione offline con cache vuota e sole dipendenze di produzione in un prefisso temporaneo. Deve rimanere separato dalla suite offline `npm test` e non deve sostituire l'installazione globale dell'utente o leggere la configurazione reale.
 
 DPAPI rimane compatibile con la CLI PowerShell. Keychain e Secret Service sono coperti da test con tool simulati e richiedono verifica nativa negli ambienti di destinazione. L'eventuale cancellazione del branch source è una funzionalità futura da valutare separatamente.
 
