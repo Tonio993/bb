@@ -9,6 +9,7 @@ import {
 import {
     GitCommandError,
 } from "./git-command-error.ts";
+import { normalizeBitbucketUrl } from "../config/bitbucket-url.ts";
 
 type TokenProvider =
     () => string;
@@ -412,20 +413,5 @@ function getAuthenticationKey(value: string | undefined): string {
         );
     }
 
-    let url: URL;
-    try {
-        url = new URL(value.trim());
-    } catch {
-        throw new Error("Invalid Bitbucket URL. Configure an absolute HTTP or HTTPS URL with 'bb config bitbucket.url'.");
-    }
-
-    if (
-        !["http:", "https:"].includes(url.protocol) || !url.hostname ||
-        url.hostname.includes("*") || url.username || url.password || url.search || url.hash
-    ) {
-        throw new Error("Invalid Bitbucket URL for Git authentication. Use an HTTP or HTTPS URL without credentials, wildcards, query parameters, or fragments.");
-    }
-
-    url.pathname = url.pathname.replace(/\/+$/, "") + "/";
-    return `http.${url.href}.extraHeader`;
+    return `http.${normalizeBitbucketUrl(value)}/.extraHeader`;
 }

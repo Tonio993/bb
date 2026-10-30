@@ -64,7 +64,13 @@ test("config list, read, and write work without resolving application clients or
         ["https://bitbucket.company.com"],
     ]);
 
-    await runCli(["config", "list"], context);
+    const snapshots = t.mock.method(store, "snapshot");
+    t.mock.method(store, "get", () => { throw new Error("Listing must use a single snapshot."); });
+    for (const args of [["config"], ["config", "list"]]) {
+        snapshots.mock.resetCalls();
+        await runCli(args, context);
+        assert.equal(snapshots.mock.callCount(), 1);
+    }
     await assert.rejects(runCli(["config", "unknown.key"], context), /Available keys:/);
 });
 
@@ -126,7 +132,7 @@ async function initialize(
 
 test("config init works from an empty configuration and Enter preserves existing defaults", async (t) => {
     const { store, env } = createFixture(t);
-    const first = await initialize(env, ["https://bitbucket.company.com", "PROJECT", "mario,luca", "upstream"]);
+    const first = await initialize(env, [" HTTPS://BITBUCKET.company.com:443/// ", " PROJECT ", " mario, , luca, ", " upstream "]);
     assert.equal(first.code, 0, first.stderr || first.stdout);
     assert.equal(first.stderr, "");
     assert.match(first.stdout, /Configuration saved successfully/);

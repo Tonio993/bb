@@ -100,6 +100,10 @@ Il file di configurazione risiede fuori dai repository:
 
 `config list` mostra il percorso effettivo. La configurazione obbligatoria viene validata quando un comando Bitbucket la usa; l'help e i comandi `config` rimangono disponibili senza di essa. Un file JSON illeggibile o con campi di tipo errato produce un errore che identifica il file e il problema.
 
+Lettura, scrittura e inizializzazione applicano le stesse regole di normalizzazione: spazi esterni rimossi, reviewer vuoti esclusi e URL con host normalizzato e senza slash finali. L'URL deve essere assoluto HTTP/HTTPS e non deve contenere credenziali, wildcard nell'host, query o fragment; il context path è supportato. Le stringhe presenti non possono essere vuote; i valori opzionali mancanti mantengono i default indicati nella tabella.
+
+`config` e `config list` mostrano i valori da una sola lettura del file; anche i default di `config init` provengono da una singola snapshot. I salvataggi usano un file temporaneo nella stessa directory e sostituiscono il JSON soltanto dopo aver completato la scrittura. Un errore durante scrittura o sostituzione lascia intatto il file precedente. Gli aggiornamenti di singole chiavi conservano eventuali campi aggiuntivi.
+
 ## Token Bitbucket
 
 Il token è separato da `config.json`. Per impostarlo, controllarne la provenienza o cancellare quello salvato:

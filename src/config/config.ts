@@ -3,16 +3,23 @@ import {
     mkdirSync,
     readFileSync,
     writeFileSync,
+    openSync,
+    closeSync,
+    renameSync,
+    rmSync,
 } from "node:fs";
+import { randomUUID } from "node:crypto";
 
 import {
     dirname,
     join,
+    basename,
 } from "node:path";
 
 import {
     homedir,
 } from "node:os";
+import { normalizeBitbucketUrl } from "./bitbucket-url.ts";
 
 
 export type BbConfig = {
@@ -52,6 +59,12 @@ export const CONFIG_KEYS = [
 export type ConfigKey =
     typeof CONFIG_KEYS[number];
 
+export type ConfigSnapshot = {
+    readonly "bitbucket.url": string | undefined;
+    readonly "bitbucket.projectKey": string | undefined;
+    readonly "bitbucket.defaultReviewers": string[];
+    readonly "git.remote": string;
+};
 
 export class ConfigStore {
     readonly path: string;
@@ -72,86 +85,26 @@ export class ConfigStore {
 
 
     loadRequired(): BbConfig {
-        const config =
-            this.loadRaw();
-
-        const url =
-            config.bitbucket?.url?.trim();
-
-        if (!url) {
-            throw missingConfigurationError(
-                "bitbucket.url",
-                "https://bitbucket.company.com",
-            );
-        }
-
-        const projectKey =
-            config.bitbucket?.projectKey?.trim();
-
-        if (!projectKey) {
-            throw missingConfigurationError(
-                "bitbucket.projectKey",
-                "PROJECT",
-            );
-        }
-
-        const defaultReviewers =
-            config.bitbucket
-                ?.defaultReviewers
-                ?.map(
-                    (reviewer) =>
-                        reviewer.trim(),
-                )
-                .filter(Boolean)
-            ?? [];
-
-        const remote =
-            config.git?.remote?.trim()
-            || "origin";
-
-        return {
-            bitbucket: {
-                url:
-                    url.replace(
-                        /\/+$/,
-                        "",
-                    ),
-
-                projectKey,
-
-                defaultReviewers,
-            },
-
-            git: {
-                remote,
-            },
-        };
+        return requireConfiguration(this.snapshot());
     }
 
+    snapshot(): ConfigSnapshot {
+        return toSnapshot(normalizeConfig(this.loadRaw()));
+    }
 
     get(
         key: ConfigKey,
     ): string | string[] | undefined {
-        const config =
-            this.loadRaw();
-
+        const config = this.loadRaw();
         switch (key) {
             case "bitbucket.url":
-                return config.bitbucket
-                    ?.url;
-
+                return config.bitbucket?.url === undefined ? undefined : normalizeBitbucketUrl(config.bitbucket.url);
             case "bitbucket.projectKey":
-                return config.bitbucket
-                    ?.projectKey;
-
+                return config.bitbucket?.projectKey === undefined ? undefined : normalizeText(config.bitbucket.projectKey, "Bitbucket project key");
             case "bitbucket.defaultReviewers":
-                return config.bitbucket
-                    ?.defaultReviewers
-                    ?? [];
-
+                return normalizeReviewers(config.bitbucket?.defaultReviewers ?? []);
             case "git.remote":
-                return config.git?.remote
-                    || "origin";
+                return config.git?.remote === undefined ? "origin" : normalizeText(config.git.remote, "Git remote");
         }
     }
 
@@ -167,75 +120,34 @@ export class ConfigStore {
         config.git ??= {};
 
         switch (key) {
-            case "bitbucket.url": {
-                const normalized =
-                    value.trim();
-
-                if (!normalized) {
-                    throw new Error(
-                        "Bitbucket URL cannot be empty.",
-                    );
-                }
-
-                config.bitbucket.url =
-                    normalized.replace(
-                        /\/+$/,
-                        "",
-                    );
-
+            case "bitbucket.url":
+                config.bitbucket.url = value;
                 break;
-            }
-
-            case "bitbucket.projectKey": {
-                const normalized =
-                    value.trim();
-
-                if (!normalized) {
-                    throw new Error(
-                        "Bitbucket project key cannot be empty.",
-                    );
-                }
-
-                config.bitbucket.projectKey =
-                    normalized;
-
+            case "bitbucket.projectKey":
+                config.bitbucket.projectKey = value;
                 break;
-            }
-
             case "bitbucket.defaultReviewers":
                 config.bitbucket
                     .defaultReviewers =
-                    parseReviewers(value);
+                    value.split(",");
 
                 break;
 
-            case "git.remote": {
-                const normalized =
-                    value.trim();
-
-                if (!normalized) {
-                    throw new Error(
-                        "Git remote cannot be empty.",
-                    );
-                }
-
-                config.git.remote =
-                    normalized;
-
+            case "git.remote":
+                config.git.remote = value;
                 break;
-            }
         }
 
-        this.saveRaw(config);
+        this.saveRaw(normalizeConfig(config));
     }
 
 
     save(
         config: BbConfig,
     ): void {
-        this.saveRaw(
-            config,
-        );
+        const normalized = normalizeConfig(config);
+        requireConfiguration(toSnapshot(normalized));
+        this.saveRaw(normalized);
     }
 
 
@@ -275,22 +187,26 @@ export class ConfigStore {
     private saveRaw(
         config: RawConfig,
     ): void {
-        mkdirSync(
-            dirname(this.path),
-            {
-                recursive: true,
-            },
-        );
-
-        writeFileSync(
-            this.path,
-            JSON.stringify(
-                config,
-                null,
-                2,
-            ) + "\n",
-            "utf8",
-        );
+        const content = JSON.stringify(config, null, 2) + "\n";
+        const directory = dirname(this.path);
+        const temporaryPath = join(directory, `.${basename(this.path)}.${randomUUID()}.tmp`);
+        try {
+            mkdirSync(directory, { recursive: true });
+            const descriptor = openSync(temporaryPath, "wx", 0o600);
+            try {
+                try {
+                    writeFileSync(descriptor, content, "utf8");
+                } finally {
+                    closeSync(descriptor);
+                }
+                renameSync(temporaryPath, this.path);
+            } finally {
+                rmSync(temporaryPath, { force: true });
+            }
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            throw new Error(`Unable to write configuration file '${this.path}': ${message}`);
+        }
     }
 }
 
@@ -404,16 +320,56 @@ export function getGlobalConfigPath(): string {
 }
 
 
-function parseReviewers(
-    value: string,
-): string[] {
-    return value
-        .split(",")
-        .map(
-            (reviewer) =>
-                reviewer.trim(),
-        )
-        .filter(Boolean);
+function normalizeConfig(value: unknown): RawConfig {
+    assertRawConfig(value);
+    const config: RawConfig = { ...value };
+    if (value.bitbucket) {
+        config.bitbucket = { ...value.bitbucket };
+        if (value.bitbucket.url !== undefined) {
+            config.bitbucket.url = normalizeBitbucketUrl(value.bitbucket.url);
+        }
+        if (value.bitbucket.projectKey !== undefined) {
+            config.bitbucket.projectKey = normalizeText(value.bitbucket.projectKey, "Bitbucket project key");
+        }
+        if (value.bitbucket.defaultReviewers !== undefined) {
+            config.bitbucket.defaultReviewers = normalizeReviewers(value.bitbucket.defaultReviewers);
+        }
+    }
+    if (value.git) {
+        config.git = { ...value.git };
+        if (value.git.remote !== undefined) config.git.remote = normalizeText(value.git.remote, "Git remote");
+    }
+    return config;
+}
+
+function normalizeText(value: string, label: string): string {
+    const normalized = value.trim();
+    if (!normalized) throw new Error(`${label} cannot be empty.`);
+    return normalized;
+}
+
+function normalizeReviewers(value: readonly string[]): string[] {
+    return value.map((reviewer) => reviewer.trim()).filter(Boolean);
+}
+
+function toSnapshot(config: RawConfig): ConfigSnapshot {
+    return {
+        "bitbucket.url": config.bitbucket?.url,
+        "bitbucket.projectKey": config.bitbucket?.projectKey,
+        "bitbucket.defaultReviewers": config.bitbucket?.defaultReviewers ?? [],
+        "git.remote": config.git?.remote ?? "origin",
+    };
+}
+
+function requireConfiguration(config: ConfigSnapshot): BbConfig {
+    const url = config["bitbucket.url"];
+    if (!url) throw missingConfigurationError("bitbucket.url", "https://bitbucket.company.com");
+    const projectKey = config["bitbucket.projectKey"];
+    if (!projectKey) throw missingConfigurationError("bitbucket.projectKey", "PROJECT");
+    return {
+        bitbucket: { url, projectKey, defaultReviewers: config["bitbucket.defaultReviewers"] },
+        git: { remote: config["git.remote"] },
+    };
 }
 
 

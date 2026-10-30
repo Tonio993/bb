@@ -172,6 +172,7 @@ src/
 │   └── merge-pr-command.ts
 │
 ├── config/
+│   ├── bitbucket-url.ts
 │   └── config.ts
 │
 ├── git/
@@ -380,6 +381,14 @@ Su macOS usare una directory standard sotto:
 ```
 
 La logica deve essere centralizzata in `ConfigStore`.
+
+Normalizzare e validare i valori con le stesse regole in `get`, `snapshot`, `set`, `save` e `loadRequired`. Le chiavi obbligatorie possono mancare nelle configurazioni parziali; sono richieste da `loadRequired` e dal salvataggio completo `save`. I valori stringa presenti non possono essere vuoti dopo il trim. `get` applica le regole semantiche soltanto alla chiave richiesta, così Git locale rimane indipendente dall'URL Bitbucket; la struttura JSON viene sempre verificata.
+
+Usare `config/bitbucket-url.ts` per la normalizzazione condivisa dell'URL, anche nell'autenticazione Git: URL assoluto HTTP/HTTPS, senza credenziali, wildcard nell'host, query o fragment. Conservare il context path, normalizzare host e porta tramite `URL` ed eliminare gli slash finali. Non includere l'URL inserito nei messaggi di validazione.
+
+`ConfigStore.snapshot()` legge il file una volta e restituisce i quattro valori normalizzati con i default. `config`/`config list` e i default di `config init` devono usare una singola snapshot per invocazione, senza una cache globale che rimanga obsoleta dopo una scrittura.
+
+Salvare tramite file temporaneo esclusivo nella stessa directory, chiuderlo e sostituire il file di destinazione con `renameSync`. In caso di errore di scrittura o sostituzione preservare il file precedente e ripulire il temporaneo. Non cancellare preventivamente il file di configurazione e non introdurre fallback che lo scrivano direttamente. Gli aggiornamenti di singole chiavi mantengono i campi sconosciuti già presenti.
 
 ---
 

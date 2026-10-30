@@ -118,6 +118,7 @@ Examples:
 function showConfiguration(
     context: CommandContext,
 ): void {
+    const config = context.configStore.snapshot();
     console.log(
         `Configuration file: ${context.configStore.path}`,
     );
@@ -127,9 +128,7 @@ function showConfiguration(
     for (const key of CONFIG_KEYS) {
         console.log(
             `${key} = ${formatValue(
-                context.configStore.get(
-                    key,
-                ),
+                config[key],
             )}`,
         );
     }
@@ -158,6 +157,7 @@ function showConfigurationValue(
 async function initializeConfiguration(
     context: CommandContext,
 ): Promise<void> {
+    const config = context.configStore.snapshot();
     const readline =
         createInterface({
             input: stdin,
@@ -180,11 +180,7 @@ async function initializeConfiguration(
             await askRequired(
                 readline,
                 "Bitbucket URL",
-                getStringValue(
-                    context.configStore.get(
-                        "bitbucket.url",
-                    ),
-                ),
+                config["bitbucket.url"],
             );
 
 
@@ -192,20 +188,12 @@ async function initializeConfiguration(
             await askRequired(
                 readline,
                 "Bitbucket project key",
-                getStringValue(
-                    context.configStore.get(
-                        "bitbucket.projectKey",
-                    ),
-                ),
+                config["bitbucket.projectKey"],
             );
 
 
         const currentReviewers =
-            getArrayValue(
-                context.configStore.get(
-                    "bitbucket.defaultReviewers",
-                ),
-            );
+            config["bitbucket.defaultReviewers"];
 
         const reviewersInput =
             await readline.question(
@@ -219,20 +207,11 @@ async function initializeConfiguration(
             reviewersInput.trim()
                 ? reviewersInput
                     .split(",")
-                    .map(
-                        (reviewer) =>
-                            reviewer.trim(),
-                    )
-                    .filter(Boolean)
                 : currentReviewers;
 
 
         const currentRemote =
-            getStringValue(
-                context.configStore.get(
-                    "git.remote",
-                ),
-            ) || "origin";
+            config["git.remote"];
 
         const remoteInput =
             await readline.question(
@@ -313,24 +292,6 @@ function buildPrompt(
     }
 
     return `${label}: `;
-}
-
-
-function getStringValue(
-    value: string | string[] | undefined,
-): string | undefined {
-    return typeof value === "string"
-        ? value
-        : undefined;
-}
-
-
-function getArrayValue(
-    value: string | string[] | undefined,
-): string[] {
-    return Array.isArray(value)
-        ? value
-        : [];
 }
 
 
