@@ -1,6 +1,6 @@
 # bb
 
-CLI interna per Git e Bitbucket Data Center / Server, in porting da PowerShell a Node.js e TypeScript.
+CLI interna per Git e Bitbucket Data Center / Server, sviluppata in Node.js e TypeScript.
 
 Il progetto implementa configurazione globale, pass-through Git, ricerca, creazione e merge delle Pull Request. Le API utilizzate sono quelle di Bitbucket Data Center, sotto `/rest/api/latest/`.
 
@@ -52,12 +52,6 @@ bb -C "C:\work\payments" get-pr-url develop
 ```
 
 Il campo `bin` espone `dist/main.js` come comando `bb`. npm crea il launcher adatto alla piattaforma. Controllare con `npm prefix --global` il prefisso di installazione: la directory del prefisso su Windows, oppure la sua sottodirectory `bin` su Linux e macOS, deve essere nel `PATH`.
-
-Se è già presente la CLI PowerShell, controllare quale comando viene risolto prima di usare il nuovo launcher:
-
-```powershell
-Get-Command bb -All
-```
 
 Per aggiornare, installare il nuovo tarball con lo stesso comando `npm install --global`. Per disinstallare:
 
@@ -126,7 +120,7 @@ Dal checkout usare, ad esempio, `node src/main.ts token set`. Questi comandi fun
 | macOS | Keychain, servizio `bb.bitbucket`, account `token` | `/usr/bin/security` e accesso al portachiavi dell'utente |
 | Linux | Secret Service, attributi `service=bb.bitbucket` e `account=token` | `secret-tool` di libsecret e una sessione Secret Service disponibile e sbloccata |
 
-Su Windows il formato rimane compatibile con il file creato dalla CLI PowerShell: il token esistente continua a funzionare, senza migrazione. Anche le modifiche e la cancellazione operate dalla CLI Node riguardano quel file.
+Su Windows il token viene cifrato con DPAPI e può essere letto soltanto dallo stesso account Windows. I comandi `token set` e `token delete` gestiscono il file `token.dat` indicato nella tabella.
 
 Su Linux installare `secret-tool` tramite il gestore pacchetti della distribuzione e usare un servizio compatibile, ad esempio GNOME Keyring. Per CI, container, SSH o sessioni senza portachiavi, fornire la variabile `BB_TOKEN` tramite il secret manager dell'ambiente.
 
@@ -279,7 +273,7 @@ node --test test/token-store.test.ts
 Remove-Item Env:BB_TEST_NATIVE_TOKEN_STORE
 ```
 
-Le regole architetturali e lo stato del porting sono descritti in [AGENTS.md](AGENTS.md).
+Le regole architetturali e lo stato del progetto sono descritti in [AGENTS.md](AGENTS.md).
 
 ## Attività rimanenti
 

@@ -4,9 +4,9 @@
 
 `bb` è una CLI interna per semplificare operazioni Git e Bitbucket Data Center utilizzate frequentemente nello sviluppo.
 
-Il progetto nasce come tool PowerShell ed è in fase di migrazione verso **Node.js + TypeScript**.
+Il progetto è sviluppato in **Node.js + TypeScript** e costituisce l'implementazione principale della CLI `bb`.
 
-La versione Node deve progressivamente raggiungere la parità funzionale con la versione PowerShell, migliorandone allo stesso tempo:
+Lo sviluppo deve mantenere e migliorare:
 
 * portabilità;
 * manutenibilità;
@@ -16,7 +16,7 @@ La versione Node deve progressivamente raggiungere la parità funzionale con la 
 * consistenza della CLI;
 * gestione degli errori.
 
-La versione PowerShell esistente deve essere considerata come riferimento funzionale quando il comportamento atteso non è evidente dal codice Node.
+Il comportamento atteso è definito dalla documentazione, dal codice e dai test di questo repository.
 
 La guida operativa, i requisiti e i limiti dell'implementazione attuale sono descritti in [README.md](README.md).
 
@@ -263,7 +263,7 @@ Usare convenzioni CLI standard:
 
 `--delete-source-branch` indica la convenzione per un'eventuale funzionalità futura: non è implementata nel comando `merge-pr` attuale.
 
-Evitare la sintassi PowerShell precedente:
+Usare nomi di opzioni in kebab-case; evitare forme come:
 
 ```text
 -ProjectKey
@@ -504,7 +504,7 @@ store sicuro della piattaforma
 
 La variabile d'ambiente permette l'autenticazione anche in CI e sessioni senza portachiavi e non viene salvata dalla CLI.
 
-Su Windows viene riutilizzato il token della versione PowerShell, memorizzato in:
+Su Windows il token è memorizzato in:
 
 ```text
 %APPDATA%\bb\token.dat
@@ -512,9 +512,9 @@ Su Windows viene riutilizzato il token della versione PowerShell, memorizzato in
 
 Il token è cifrato tramite Windows DPAPI.
 
-La versione Node attuale può invocare temporaneamente PowerShell per decifrarlo.
+Il backend Windows invoca `powershell.exe` per cifrare e decifrare il token tramite DPAPI.
 
-Flusso attuale:
+Flusso del backend Windows:
 
 ```text
 Node
@@ -785,7 +785,7 @@ Non duplicare questa logica nei comandi.
 
 # Branch Pull Request
 
-La risoluzione source/target deve mantenere il comportamento della CLI PowerShell.
+La risoluzione source/target segue le regole descritte di seguito.
 
 Caso:
 
@@ -886,7 +886,7 @@ Se non ci sono PR corrispondenti, nessun output e exit code di successo.
 
 # create-pr
 
-Il comportamento atteso deve replicare quello PowerShell.
+Il comando crea una PR dal branch source verso il branch target secondo le regole descritte di seguito.
 
 Esempio principale:
 
@@ -1023,20 +1023,7 @@ Questa semantica può essere mantenuta.
 
 # merge-pr
 
-La nuova implementazione Node deve preferire il **merge tramite REST API Bitbucket**.
-
-Non portare automaticamente il vecchio workflow PowerShell basato su:
-
-```text
-checkout
-pull
-merge locale
-push
-stash
-restore
-```
-
-se l'API REST di merge funziona correttamente.
+Il comando esegue il **merge tramite REST API Bitbucket**, senza checkout, pull, merge locale, push o stash.
 
 Endpoint:
 
@@ -1262,9 +1249,9 @@ Il progetto deve rimanere facilmente testabile senza framework di dependency inj
 
 ---
 
-# Compatibilità con la versione PowerShell
+# Stabilità del comportamento pubblico
 
-Durante il porting confrontare il comportamento Node con la versione PowerShell.
+Durante lo sviluppo verificare il comportamento della CLI rispetto alla documentazione e ai test del repository.
 
 Preservare quando possibile:
 
@@ -1276,21 +1263,11 @@ Preservare quando possibile:
 * generazione PR;
 * merge checks.
 
-È accettabile migliorare la sintassi CLI secondo convenzioni standard Unix.
-
-Esempio:
-
-```text
-PowerShell:
--ProjectKey
-
-Node:
---project-key
-```
+La sintassi CLI segue le convenzioni standard Unix, con opzioni in kebab-case come `--project-key`.
 
 ---
 
-# Stato del porting
+# Stato del progetto
 
 Implementato e verificato tramite test offline:
 
@@ -1339,7 +1316,7 @@ Il pacchetto rimane privato e dichiara il launcher `bb` tramite `bin`. La prepar
 
 Eseguire `npm run test:package` quando cambiano packaging, build, dipendenze runtime o launcher. Questo controllo costruisce un tarball, verifica Commander incluso con la sua licenza e prova l'installazione offline con cache vuota e sole dipendenze di produzione in un prefisso temporaneo. Deve rimanere separato dalla suite offline `npm test` e non deve sostituire l'installazione globale dell'utente o leggere la configurazione reale.
 
-DPAPI rimane compatibile con la CLI PowerShell. Keychain e Secret Service sono coperti da test con tool simulati e richiedono verifica nativa negli ambienti di destinazione. L'eventuale cancellazione del branch source è una funzionalità futura da valutare separatamente.
+Il backend DPAPI è verificabile su Windows tramite il test nativo opzionale. Keychain e Secret Service sono coperti da test con tool simulati e richiedono verifica nativa negli ambienti di destinazione. L'eventuale cancellazione del branch source è una funzionalità futura da valutare separatamente.
 
 ---
 
