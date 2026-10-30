@@ -1,10 +1,6 @@
 import type { Command } from "commander";
 
-import {
-    getOpenPullRequest,
-    getPullRequest,
-    mergePullRequest,
-} from "../bitbucket/pull-requests.ts";
+import { mergeOpenPullRequest } from "../application/merge-pull-request.ts";
 import type { CommandContext } from "../cli/command-context.ts";
 import { resolvePullRequestBranches } from "../pullrequest/branches.ts";
 import { resolveRepositoryContext } from "../repository/repository-context.ts";
@@ -58,35 +54,11 @@ Examples:
                 context.gitClient,
                 { projectKey: options.projectKey },
             );
-            const match = await getOpenPullRequest(context.bitbucketClient, {
-                ...repository,
-                ...branches,
-            });
-
-            if (!match) {
-                throw new Error(
-                    `No open Pull Request found from '${branches.sourceBranch}' to '${branches.targetBranch}'.`,
-                );
-            }
-
-            const pullRequest = await getPullRequest(context.bitbucketClient, {
-                ...repository,
-                pullRequestId: match.id,
-            });
-
-            if (
-                pullRequest.fromRef.id !== `refs/heads/${branches.sourceBranch}` ||
-                pullRequest.toRef.id !== `refs/heads/${branches.targetBranch}`
-            ) {
-                throw new Error(
-                    "Pull Request branches changed after discovery. Run the command again.",
-                );
-            }
-
-            const merged = await mergePullRequest(
+            const merged = await mergeOpenPullRequest(
                 context.bitbucketClient,
-                pullRequest,
                 {
+                    ...repository,
+                    ...branches,
                     messagePrefix: options.messagePrefix,
                     completeTasks: options.completeTasks,
                 },

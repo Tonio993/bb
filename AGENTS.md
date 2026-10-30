@@ -138,6 +138,9 @@ La struttura prevista è indicativamente:
 src/
 ├── main.ts
 │
+├── application/
+│   └── merge-pull-request.ts
+│
 ├── auth/
 │   ├── token-input.ts
 │   └── token-store.ts
@@ -148,6 +151,7 @@ src/
 │   ├── bitbucket-types.ts
 │   ├── pagination.ts
 │   ├── response-parsers.ts
+│   ├── pull-request-tasks.ts
 │   ├── pull-requests.ts
 │   └── repositories.ts
 │
@@ -175,6 +179,7 @@ src/
 ├── pullrequest/
 │   ├── branches.ts
 │   ├── merge-commit-message.ts
+│   ├── merge-validation.ts
 │   ├── pull-request-content.ts
 │   ├── review-validation.ts
 │   └── reviewers.ts
@@ -1037,6 +1042,10 @@ Questa semantica può essere mantenuta.
 # merge-pr
 
 Il comando esegue il **merge tramite REST API Bitbucket**, senza checkout, pull, merge locale, push o stash.
+
+Il registrar CLI risolve branch e repository, invoca `mergeOpenPullRequest` in `application/merge-pull-request.ts` e stampa il risultato. Il workflow applicativo orchestra ricerca, rilettura, validazione, completamento opzionale dei task, messaggio e merge. Non deve contenere URL REST, parsing HTTP, dipendenze Commander o operazioni Git.
+
+In `bitbucket/pull-requests.ts` mantenere le operazioni REST sulle PR e sul suggerimento del messaggio; `mergePullRequest` invia soltanto la richiesta di merge con il payload esplicito. In `bitbucket/pull-request-tasks.ts` mantenere lettura paginata, rilettura e risoluzione dei task. Le regole pure su stato, versione, reviewer e completabilità dei task risiedono in `pullrequest/merge-validation.ts`. Non introdurre classi di servizio o container DI per questo workflow.
 
 Endpoint:
 

@@ -3,24 +3,16 @@ import {
 } from "./bitbucket-client.ts";
 
 import type {
+    BitbucketCommitMessageSuggestion,
     BitbucketPullRequest,
-    BitbucketPullRequestTask,
     BitbucketRepository,
 } from "./bitbucket-types.ts";
-import { parseCommitMessageSuggestion, parsePullRequest, parseTask } from "./response-parsers.ts";
+import { parseCommitMessageSuggestion, parsePullRequest } from "./response-parsers.ts";
 import { iterateBitbucketPages } from "./pagination.ts";
 
 import {
     getProjectRepositories,
 } from "./repositories.ts";
-
-import {
-    assertPullRequestReview,
-} from "../pullrequest/review-validation.ts";
-
-import {
-    buildMergeCommitMessage,
-} from "../pullrequest/merge-commit-message.ts";
 
 
 export type GetOpenPullRequestOptions = {
@@ -282,141 +274,35 @@ export async function getPullRequest(
     );
 }
 
-export type MergePullRequestOptions = {
-    messagePrefix?: string;
-    completeTasks?: boolean;
+export type MergePullRequestBody = {
+    version: number;
+    message?: string;
+    autoSubject?: boolean;
 };
-
-function assertPullRequestCanMerge(
-    pullRequest: BitbucketPullRequest,
-): void {
-    if (pullRequest.state !== "OPEN") {
-        throw new Error(
-            "Only open Pull Requests can be merged.",
-        );
-    }
-
-    if (!Number.isInteger(pullRequest.version) || pullRequest.version < 0) {
-        throw new Error(
-            "Unable to determine the Pull Request version.",
-        );
-    }
-
-    assertPullRequestReview(pullRequest.reviewers);
-}
 
 export async function mergePullRequest(
     client: BitbucketClient,
-    pullRequest: BitbucketPullRequest,
-    options: MergePullRequestOptions = {},
+    identity: PullRequestIdentity,
+    body: MergePullRequestBody,
 ): Promise<BitbucketPullRequest> {
-    assertPullRequestCanMerge(pullRequest);
-
-    const path = getPullRequestPath({
-        projectKey: pullRequest.toRef?.repository?.project?.key,
-        repository: pullRequest.toRef?.repository?.slug,
-        pullRequestId: pullRequest.id,
-    });
-
-    let currentPullRequest = pullRequest;
-
-    if (options.completeTasks) {
-        await completePullRequestTasks(client, path);
-        currentPullRequest = await client.get(path, parsePullRequest);
-
-        if (
-            currentPullRequest.fromRef.id !== pullRequest.fromRef.id ||
-            currentPullRequest.toRef.id !== pullRequest.toRef.id
-        ) {
-            throw new Error(
-                "Pull Request branches changed while completing tasks. Run the command again.",
-            );
-        }
-
-        assertPullRequestCanMerge(currentPullRequest);
-    }
-
-    const body: {
-        version: number;
-        message?: string;
-        autoSubject?: boolean;
-    } = {
-        version: currentPullRequest.version,
-    };
-
-    if (options.messagePrefix?.trim()) {
-        const suggestion = await client.get(
-            `${path}/commit-message-suggestion`,
-            parseCommitMessageSuggestion,
-        );
-
-        body.message = buildMergeCommitMessage(suggestion, options.messagePrefix);
-        body.autoSubject = false;
-    }
-
-    const mergedPullRequest = await client.post(
-        `${path}/merge`,
+    return client.post(
+        `${getPullRequestPath(identity)}/merge`,
         body,
         parsePullRequest,
     );
-
-    if (mergedPullRequest.state !== "MERGED") {
-        throw new Error(
-            "Bitbucket did not confirm that the Pull Request was merged.",
-        );
-    }
-
-    return mergedPullRequest;
 }
 
-async function completePullRequestTasks(
+export async function getPullRequestCommitMessageSuggestion(
     client: BitbucketClient,
-    pullRequestPath: string,
-): Promise<void> {
-    const tasks: BitbucketPullRequestTask[] = [];
-
-    // Read all pages before updates so resolving tasks cannot shift the remaining pages.
-    for await (const page of iterateBitbucketPages(
-        client, `${pullRequestPath}/blocker-comments`, parseTask, "Pull Request task",
-    )) {
-        tasks.push(...page.values);
-    }
-
-    for (const task of tasks) {
-        if (task.state === "RESOLVED") {
-            continue;
-        }
-
-        if (!Number.isInteger(task.id) || task.id <= 0) {
-            throw new Error("Bitbucket did not provide a valid Pull Request task ID.");
-        }
-
-        const taskPath = `${pullRequestPath}/comments/${task.id}`;
-        const current = await client.get(taskPath, parseTask);
-
-        if (current.state === "RESOLVED" || current.severity === "NORMAL") {
-            continue;
-        }
-
-        if (
-            current.state !== "OPEN" || current.severity !== "BLOCKER" ||
-            !Number.isInteger(current.version) || current.version < 0
-        ) {
-            throw new Error(`Bitbucket did not provide valid details for Pull Request task #${task.id}.`);
-        }
-
-        const completed = await client.put(taskPath, {
-            version: current.version,
-            state: "RESOLVED",
-        }, parseTask);
-
-        if (completed.state !== "RESOLVED") {
-            throw new Error(`Bitbucket did not confirm completion of Pull Request task #${task.id}.`);
-        }
-    }
+    identity: PullRequestIdentity,
+): Promise<BitbucketCommitMessageSuggestion> {
+    return client.get(
+        `${getPullRequestPath(identity)}/commit-message-suggestion`,
+        parseCommitMessageSuggestion,
+    );
 }
 
-function getPullRequestPath(
+export function getPullRequestPath(
     identity: PullRequestIdentity,
 ): string {
     if (!identity.projectKey?.trim()) {
