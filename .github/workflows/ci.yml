@@ -41,6 +41,8 @@ jobs:
           BB_TEST_NATIVE_TOKEN_STORE: "1"
       - name: Check installable package
         run: npm run test:package
+      - name: Check installation from Git
+        run: npm exec --yes --package=npm@12.2.1 -- npm run test:git
 
   package:
     name: Build installable package
