@@ -34,9 +34,11 @@ npm run test:package
 npm pack
 ```
 
-`npm pack` esegue automaticamente `prepack`, che avvia il build, e genera `bb-0.1.0.tgz` nella directory corrente. Il build pulisce `dist/`, compila solo `src/` tramite `tsconfig.build.json` e riscrive gli import `.ts` in `.js`. Non genera eseguibili `.exe`.
+`npm pack` esegue automaticamente `prepare`, che avvia il build, e genera `bb-0.1.0.tgz` nella directory corrente. Il build pulisce `dist/`, compila solo `src/` tramite `tsconfig.build.json` e riscrive gli import `.ts` in `.js`. Non genera eseguibili `.exe`.
 
 Questa compilazione serve alla distribuzione: [Node.js 24 non esegue il type stripping sotto `node_modules`](https://r2.nodejs.org/docs/v24.0.2/api/typescript.html). Lo sviluppo continua a usare TypeScript diretto e `npm start` non richiede il build.
+
+Il lifecycle `prepare` esegue il build anche durante `npm install` e `npm ci` nel checkout. Le successive esecuzioni di `node src/main.ts ...` continuano a usare direttamente i sorgenti aggiornati.
 
 L'archivio contiene il manifest, il README, i file JavaScript di `dist/` e Commander completo della sua licenza in `node_modules/commander/`, incluso tramite `bundleDependencies`. Sorgenti TypeScript dell'applicazione, test, configurazioni di sviluppo, token e dipendenze di sviluppo sono esclusi. Commander proviene dalle dipendenze installate nel checkout: eseguire `npm ci` prima di preparare il pacchetto da un nuovo checkout.
 
@@ -64,6 +66,23 @@ La distribuzione interna avviene tramite tarball. `private: true` mantiene il bl
 `npm run test:package` costruisce un archivio temporaneo, ne controlla i file e la presenza di Commander con la sua licenza, quindi lo installa offline con cache vuota, sole dipendenze di produzione e script di installazione disabilitati. Verifica il launcher da una directory esterna al checkout, l'help di `merge-pr`, lo stato del token tramite un valore fittizio in `BB_TOKEN` e una lettura della configurazione isolata. Il prefisso di prova e la cache temporanea vengono rimossi al termine; l'installazione globale dell'utente e la configurazione reale non vengono modificate.
 
 Per generare solo i file di distribuzione, usare `npm run build`.
+
+### Installazione direttamente da GitHub
+
+Questa modalità richiede Node.js >=24.15.0, npm >=12.2.1 e Git nel `PATH`. Prima dell'installazione verificare `node --version` e `npm --version`; per aggiornare npm usare `npm install --global npm@12.2.1`.
+
+```powershell
+npm install --global --allow-git=all --allow-scripts=Tonio993/bb "github:Tonio993/bb#main"
+bb --help
+```
+
+Per installare una revisione precisa, sostituire `main` con un tag o uno SHA di commit. Per aggiornare, rieseguire l'installazione indicando la revisione desiderata.
+
+npm prepara il repository in una directory temporanea, installa le dipendenze necessarie al build ed esegue `prepare` prima di confezionare e installare il pacchetto. Non serve versionare `dist/`; l'installazione finale contiene JavaScript e Commander, senza i sorgenti TypeScript o gli strumenti di sviluppo. Il campo `private: true` continua a bloccare `npm publish` e consente l'installazione da Git.
+
+Questa modalità richiede accesso a GitHub e al registry delle dipendenze e gli script npm abilitati: `--ignore-scripts` impedirebbe la generazione di `dist/`. L'opzione `--allow-git=all` abilita esplicitamente il recupero da Git, disabilitato per default in npm 12; `--allow-scripts=Tonio993/bb` consente il build da quel repository. Per un'installazione offline usare il tarball già compilato.
+
+npm 11 presenta un [difetto nella preparazione delle dipendenze Git globali](https://github.com/npm/pacote/pull/494): può omettere gli strumenti di build e modificare la destinazione dell'installazione. Il requisito npm >=12.2.1 riguarda l'installazione da Git; runtime e installazione del tarball restano compatibili con Node.js >=24.0.0.
 
 ### Pacchetto generato dalla CI
 
@@ -290,6 +309,8 @@ I test usano il runner nativo Node, client sostituibili e risposte HTTP simulate
 I comandi dipendono da contratti strutturali ottenuti con `Pick`, così i test possono fornire semplici oggetti con i metodi necessari. I test di `BitbucketClient` iniettano `fetch` nelle opzioni del costruttore; quelli di `GitClient` iniettano `execute` nel quarto argomento opzionale, senza sostituire le funzioni globali di rete o processo. In esecuzione normale i client usano le API native Node. `npm test` seleziona `test/**/*.test.ts` ed esclude gli helper condivisi dalla scoperta delle suite.
 
 La verifica del pacchetto installabile è separata e si avvia con `npm run test:package`.
+
+`npm run test:git` verifica l'installazione da un repository Git temporaneo senza `dist/` né `node_modules/`, usando un prefisso isolato. La prova richiede npm >=12.2.1, scarica le dipendenze di build dal registry npm, verifica il launcher e l'assenza delle dipendenze di sviluppo nel pacchetto installato. È separata dalla suite offline e viene eseguita nella matrice CI su tutte e tre le piattaforme. Per eseguirla con la versione npm fissata dalla CI senza aggiornare l'installazione globale usare `npm exec --yes --package=npm@12.2.1 -- npm run test:git`.
 
 `npm run check` esegue insieme controllo della formattazione, typecheck e suite offline. Per applicare lo stile comune a sorgenti, test, script e documentazione usare `npm run format`. Prettier è una dipendenza di sviluppo con versione fissata; `.editorconfig` e `.gitattributes` uniformano indentazione e terminatori LF tra le piattaforme.
 

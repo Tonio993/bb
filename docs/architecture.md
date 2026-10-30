@@ -206,9 +206,13 @@ Un errore o conflitto interrompe il flusso senza tentare il merge; i task già r
 
 ## Build, distribuzione e verifica
 
-Durante lo sviluppo Node esegue TypeScript direttamente. Il build con `tsconfig.build.json` genera il JavaScript di distribuzione; `prepack` lo avvia e il launcher npm punta a `dist/main.js`. Il pacchetto è privato: la distribuzione interna usa `npm pack` e l'installazione globale del tarball.
+Durante lo sviluppo Node esegue TypeScript direttamente. Il build con `tsconfig.build.json` genera il JavaScript di distribuzione; `prepare` lo avvia e il launcher npm punta a `dist/main.js`. Lo stesso lifecycle copre `npm pack`, l'installazione da Git e `npm install`/`npm ci` nel checkout. Non affiancare un secondo hook `prepack` che esegua nuovamente il build. Il pacchetto è privato e supporta la distribuzione tramite tarball o installazione diretta da GitHub; `dist/` rimane ignorata da Git.
 
 L'allowlist del pacchetto comprende solo runtime JavaScript, manifest, README e Commander con licenza, incluso tramite `bundleDependencies`. `npm run test:package` verifica contenuti, installazione offline con cache vuota e dipendenze di produzione, launcher e configurazione fittizia. Prefisso e dati temporanei sono isolati e ripuliti, senza modificare l'installazione globale o la configurazione reale.
+
+`npm run test:git` crea un repository Git locale temporaneo dai file necessari al build, senza artefatti compilati né dipendenze già installate. Lo installa tramite URL `git+file` con SHA esplicito, lasciando che npm scarichi le dipendenze ed esegua `prepare`, poi verifica il launcher e le dipendenze di produzione. Richiede accesso al registry e rimane separato dalla suite offline. La CI esegue anche questa prova su Windows, Linux e macOS.
+
+L'installazione diretta da Git richiede npm >=12.2.1 con Node.js >=24.15.0: npm 11 propaga erroneamente la modalità globale durante la preparazione delle dipendenze Git ([npm/pacote#494](https://github.com/npm/pacote/pull/494)). Non aggiungere installazioni ricorsive nei lifecycle per compensare quel difetto: usare una versione npm corretta. Il test Git controlla il requisito e la CI lo avvia tramite `npm exec --yes --package=npm@12.2.1 -- npm run test:git`, senza modificare l'npm globale del runner. L'installazione del tarball e il runtime mantengono il requisito Node.js >=24.0.0.
 
 La suite nativa Node seleziona `test/**/*.test.ts`; gli helper non vengono eseguiti come suite. I test usano dipendenze sostituibili e mantengono le verifiche integrate della CLI. La CI in [.github/workflows/ci.yml](../.github/workflows/ci.yml) esegue formattazione, typecheck, suite e pacchetto su Node 24 in Windows, Linux e macOS; abilita inoltre il round trip DPAPI isolato su Windows.
 

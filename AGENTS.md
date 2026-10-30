@@ -54,7 +54,7 @@ Dopo ogni modifica significativa:
 
 1. Eseguire `npm run format:check` e `npm run typecheck`, correggendo gli errori.
 2. Eseguire i test pertinenti; per modifiche trasversali eseguire `npm test`.
-3. Eseguire `npm run test:package` quando cambiano packaging, build, dipendenze runtime o launcher.
+3. Eseguire `npm run test:package` quando cambiano packaging, build, dipendenze runtime o launcher. Verificare anche `npm run test:git` quando cambiano `prepare`, il build o l'installazione da Git; questa prova richiede il registry npm.
 4. Riassumere modifiche, verifiche e limiti effettivi.
 
 `npm run check` esegue formattazione, typecheck e suite offline. La verifica del pacchetto rimane separata.
