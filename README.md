@@ -65,6 +65,19 @@ La distribuzione interna avviene tramite tarball. `private: true` mantiene il bl
 
 Per generare solo i file di distribuzione, usare `npm run build`.
 
+### Pacchetto generato dalla CI
+
+Dopo il successo dei controlli su Windows, Linux e macOS, il workflow GitHub Actions esegue il job `Build installable package`: installa le dipendenze dal lockfile e genera il tarball tramite `npm pack`, che avvia automaticamente il build.
+
+Per scaricarlo:
+
+1. Aprire **Actions → CI** nel repository GitHub e selezionare un'esecuzione completata con successo.
+2. Nella sezione **Artifacts**, scaricare `bb-package-<commit SHA>`.
+3. Estrarre lo ZIP scaricato: contiene `bb-<versione>.tgz`, installabile su Windows, Linux e macOS con Node.js 24 o successivo compatibile.
+4. Installare il tarball con `npm install --global "./bb-0.1.0.tgz" --omit=dev`, adattando il nome alla versione scaricata.
+
+Gli artifact sono conservati per 30 giorni. La generazione avviene anche sulle Pull Request e nelle esecuzioni manuali, dopo il successo dell'intera matrice. Non viene eseguito `npm publish` e non viene creata una release GitHub.
+
 ## Configurazione globale
 
 `config init` chiede un valore alla volta. Mostra i valori esistenti come default e li mantiene premendo Invio. Non richiede una configurazione già completa né un token.
@@ -280,7 +293,7 @@ La verifica del pacchetto installabile è separata e si avvia con `npm run test:
 
 `npm run check` esegue insieme controllo della formattazione, typecheck e suite offline. Per applicare lo stile comune a sorgenti, test, script e documentazione usare `npm run format`. Prettier è una dipendenza di sviluppo con versione fissata; `.editorconfig` e `.gitattributes` uniformano indentazione e terminatori LF tra le piattaforme.
 
-Il workflow [CI](.github/workflows/ci.yml) parte sulle Pull Request, sui push a `main` e manualmente da GitHub Actions. Ogni job usa Node 24 e `npm ci`, poi verifica formattazione, tipi, test offline e pacchetto installato su Windows, Linux e macOS. Il job Windows esegue anche il round trip DPAPI con un token fittizio in storage temporaneo. Non occorrono secret Bitbucket e il workflow non pubblica pacchetti. Le prove native Keychain e Secret Service restano manuali nei rispettivi ambienti.
+Il workflow [CI](.github/workflows/ci.yml) parte sulle Pull Request, sui push a `main` e manualmente da GitHub Actions. Ogni job di verifica usa Node 24 e `npm ci`, poi verifica formattazione, tipi, test offline e pacchetto installato su Windows, Linux e macOS. Il job Windows esegue anche il round trip DPAPI con un token fittizio in storage temporaneo. Dopo il successo della matrice, un job separato genera il tarball scaricabile dagli artifact. Non occorrono secret Bitbucket e non viene eseguito `npm publish`. Le prove native Keychain e Secret Service restano manuali nei rispettivi ambienti.
 
 I test di `TokenStore` usano backend fittizi per verificare precedenza delle credenziali, validazione e cache. I backend macOS e Linux e gli errori dei tool nativi sono verificati tramite un esecutore simulato, senza sostituire funzioni globali di Node. Il test reale DPAPI su Windows è opzionale, usa una directory temporanea e un token fittizio e può essere abilitato così:
 

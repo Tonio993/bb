@@ -212,4 +212,6 @@ L'allowlist del pacchetto comprende solo runtime JavaScript, manifest, README e 
 
 La suite nativa Node seleziona `test/**/*.test.ts`; gli helper non vengono eseguiti come suite. I test usano dipendenze sostituibili e mantengono le verifiche integrate della CLI. La CI in [.github/workflows/ci.yml](../.github/workflows/ci.yml) esegue formattazione, typecheck, suite e pacchetto su Node 24 in Windows, Linux e macOS; abilita inoltre il round trip DPAPI isolato su Windows.
 
+Il job `package` dipende dal successo dell'intera matrice `verify`. Su un checkout pulito Ubuntu installa le dipendenze con `npm ci` e genera `out/bb-<versione>.tgz` tramite `npm pack`, includendo build e Commander. `actions/upload-artifact` conserva soltanto i tarball per 30 giorni nell'artifact `bb-package-<commit SHA>`, senza eseguire `npm publish` o creare release. Il job usa gli stessi trigger della verifica, incluse Pull Request ed esecuzioni manuali.
+
 I backend macOS e Linux sono verificati tramite tool simulati e richiedono prove native nei rispettivi ambienti. Restano da verificare i flussi autenticati contro il server aziendale e da scegliere il canale interno di release. La cancellazione del source branch non è implementata e va valutata separatamente.
