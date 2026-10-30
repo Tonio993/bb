@@ -81,22 +81,22 @@ node src/main.ts config bitbucket.defaultReviewers "mrossi,lbianchi"
 node src/main.ts config git.remote "origin"
 ```
 
-| Impostazione | Obbligatoria | Valore predefinito |
-| --- | --- | --- |
-| `bitbucket.url` | Sì | Nessuno |
-| `bitbucket.projectKey` | Sì | Nessuno |
-| `bitbucket.defaultReviewers` | No | Nessun reviewer |
-| `git.remote` | No | `origin` |
+| Impostazione                 | Obbligatoria | Valore predefinito |
+| ---------------------------- | ------------ | ------------------ |
+| `bitbucket.url`              | Sì           | Nessuno            |
+| `bitbucket.projectKey`       | Sì           | Nessuno            |
+| `bitbucket.defaultReviewers` | No           | Nessun reviewer    |
+| `git.remote`                 | No           | `origin`           |
 
 `bitbucket.url` può includere il context path del server, ad esempio `https://bitbucket.company.com/bitbucket`.
 
 Il file di configurazione risiede fuori dai repository:
 
-| Sistema | Percorso |
-| --- | --- |
+| Sistema | Percorso                                                                       |
+| ------- | ------------------------------------------------------------------------------ |
 | Windows | `%APPDATA%\bb\config.json`, con fallback su `~/AppData/Roaming/bb/config.json` |
-| Linux | `$XDG_CONFIG_HOME/bb/config.json`, oppure `~/.config/bb/config.json` |
-| macOS | `~/Library/Application Support/bb/config.json` |
+| Linux   | `$XDG_CONFIG_HOME/bb/config.json`, oppure `~/.config/bb/config.json`           |
+| macOS   | `~/Library/Application Support/bb/config.json`                                 |
 
 `config list` mostra il percorso effettivo. La configurazione obbligatoria viene validata quando un comando Bitbucket la usa; l'help e i comandi `config` rimangono disponibili senza di essa. Un file JSON illeggibile o con campi di tipo errato produce un errore che identifica il file e il problema.
 
@@ -118,11 +118,11 @@ Dal checkout usare, ad esempio, `node src/main.ts token set`. Questi comandi fun
 
 `token set` chiede il token senza visualizzarlo, senza inserirlo nella history del prompt e ripristinando il terminale anche con Ctrl+C o EOF. Non accetta il token come argomento della command line. Per ricevere il valore da un secret manager tramite una pipe, usare `bb token set --stdin`.
 
-| Piattaforma | Memorizzazione | Requisiti |
-| --- | --- | --- |
-| Windows | DPAPI, `%APPDATA%\bb\token.dat` con fallback sulla directory roaming del profilo | `powershell.exe` e lo stesso account Windows che possiede il token |
-| macOS | Keychain, servizio `bb.bitbucket`, account `token` | `/usr/bin/security` e accesso al portachiavi dell'utente |
-| Linux | Secret Service, attributi `service=bb.bitbucket` e `account=token` | `secret-tool` di libsecret e una sessione Secret Service disponibile e sbloccata |
+| Piattaforma | Memorizzazione                                                                   | Requisiti                                                                        |
+| ----------- | -------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| Windows     | DPAPI, `%APPDATA%\bb\token.dat` con fallback sulla directory roaming del profilo | `powershell.exe` e lo stesso account Windows che possiede il token               |
+| macOS       | Keychain, servizio `bb.bitbucket`, account `token`                               | `/usr/bin/security` e accesso al portachiavi dell'utente                         |
+| Linux       | Secret Service, attributi `service=bb.bitbucket` e `account=token`               | `secret-tool` di libsecret e una sessione Secret Service disponibile e sbloccata |
 
 Su Windows il token viene cifrato con DPAPI e può essere letto soltanto dallo stesso account Windows. I comandi `token set` e `token delete` gestiscono il file `token.dat` indicato nella tabella.
 
@@ -158,19 +158,19 @@ Quando entrambi i branch sono specificati, la CLI evita di interrogare il branch
 
 ## Comandi
 
-| Comando | Risultato |
-| --- | --- |
-| `config [key] [value]` | Elenca, legge o modifica la configurazione |
-| `config list` | Elenca impostazioni e percorso del file |
-| `config init` | Configura le impostazioni in modo interattivo |
-| `token set [--stdin]` | Salva il token con input nascosto o da una pipe |
-| `token [status]` | Mostra la sorgente della credenziale attiva |
-| `token delete` | Elimina il token persistente |
-| `git <args...>` | Inoltra gli argomenti a Git |
-| `get-pr-url [source] [target]` | Cerca una PR aperta nel repository corrente |
+| Comando                         | Risultato                                              |
+| ------------------------------- | ------------------------------------------------------ |
+| `config [key] [value]`          | Elenca, legge o modifica la configurazione             |
+| `config list`                   | Elenca impostazioni e percorso del file                |
+| `config init`                   | Configura le impostazioni in modo interattivo          |
+| `token set [--stdin]`           | Salva il token con input nascosto o da una pipe        |
+| `token [status]`                | Mostra la sorgente della credenziale attiva            |
+| `token delete`                  | Elimina il token persistente                           |
+| `git <args...>`                 | Inoltra gli argomenti a Git                            |
+| `get-pr-url [source] [target]`  | Cerca una PR aperta nel repository corrente            |
 | `get-pr-urls <source> <target>` | Cerca PR aperte attraverso i repository di un progetto |
-| `create-pr [source] [target]` | Crea una PR usando i commit remoti |
-| `merge-pr [source] [target]` | Esegue il merge di una PR tramite REST |
+| `create-pr [source] [target]`   | Crea una PR usando i commit remoti                     |
+| `merge-pr [source] [target]`    | Esegue il merge di una PR tramite REST                 |
 
 Usare `--help` sul comando per consultarne opzioni e sintassi, ad esempio:
 
@@ -267,6 +267,7 @@ Le risposte di successo devono contenere JSON valido, salvo i corpi vuoti consen
 ## Sviluppo e verifica
 
 ```powershell
+npm run format:check
 npm run typecheck
 npm test
 ```
@@ -277,6 +278,10 @@ I comandi dipendono da contratti strutturali ottenuti con `Pick`, così i test p
 
 La verifica del pacchetto installabile è separata e si avvia con `npm run test:package`.
 
+`npm run check` esegue insieme controllo della formattazione, typecheck e suite offline. Per applicare lo stile comune a sorgenti, test, script e documentazione usare `npm run format`. Prettier è una dipendenza di sviluppo con versione fissata; `.editorconfig` e `.gitattributes` uniformano indentazione e terminatori LF tra le piattaforme.
+
+Il workflow [CI](.github/workflows/ci.yml) parte sulle Pull Request, sui push a `main` e manualmente da GitHub Actions. Ogni job usa Node 24 e `npm ci`, poi verifica formattazione, tipi, test offline e pacchetto installato su Windows, Linux e macOS. Il job Windows esegue anche il round trip DPAPI con un token fittizio in storage temporaneo. Non occorrono secret Bitbucket e il workflow non pubblica pacchetti. Le prove native Keychain e Secret Service restano manuali nei rispettivi ambienti.
+
 I test di `TokenStore` usano backend fittizi per verificare precedenza delle credenziali, validazione e cache. I backend macOS e Linux e gli errori dei tool nativi sono verificati tramite un esecutore simulato, senza sostituire funzioni globali di Node. Il test reale DPAPI su Windows è opzionale, usa una directory temporanea e un token fittizio e può essere abilitato così:
 
 ```powershell
@@ -285,7 +290,7 @@ node --test test/token-backends.test.ts
 Remove-Item Env:BB_TEST_NATIVE_TOKEN_STORE
 ```
 
-Le regole architetturali e lo stato del progetto sono descritti in [AGENTS.md](AGENTS.md).
+Le regole di lavoro sono in [AGENTS.md](AGENTS.md); responsabilità dei moduli e invarianti sono descritte in [docs/architecture.md](docs/architecture.md).
 
 ## Attività rimanenti
 
