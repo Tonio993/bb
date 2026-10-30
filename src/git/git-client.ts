@@ -1,10 +1,9 @@
 import { spawnSync } from "node:child_process";
-import type { SpawnSyncOptionsWithStringEncoding } from "node:child_process";
-
 import { basename } from "node:path";
 
-import { GitCommandError } from "./git-command-error.ts";
 import { normalizeBitbucketUrl } from "../config/bitbucket-url.ts";
+import { GitCommandError } from "./git-command-error.ts";
+import type { GitRunOptions, GitCommit, GitCommandRunner } from "./git-types.ts";
 
 type TokenProvider = () => string;
 
@@ -17,37 +16,6 @@ type GitExecutionResult = {
 };
 
 const maxCaptureBytes = 16 * 1024 * 1024;
-
-export type GitRunOptions = {
-    authenticated?: boolean;
-};
-
-export type GitCommit = {
-    subject: string;
-    body: string;
-};
-
-export type GitOperations = Pick<
-    GitClient,
-    | "run"
-    | "currentBranch"
-    | "currentRepository"
-    | "fetch"
-    | "assertRemoteBranchExists"
-    | "commitsBetween"
->;
-
-export type GitCommandRunner = (
-    command: string,
-    args: string[],
-    options: SpawnSyncOptionsWithStringEncoding,
-) => {
-    stdout: string | null;
-    stderr: string | null;
-    status: number | null;
-    signal: NodeJS.Signals | null;
-    error?: Error;
-};
 
 type GitClientOptions = { execute?: GitCommandRunner };
 

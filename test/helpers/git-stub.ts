@@ -1,4 +1,4 @@
-import type { GitOperations } from "../../src/git/git-client.ts";
+import type { GitOperations } from "../../src/git/git-types.ts";
 
 export function createGitStub(overrides: Partial<GitOperations> = {}): GitOperations {
     const unexpected = (): never => {

@@ -1,8 +1,8 @@
 import type { BitbucketApi } from "./bitbucket-client.ts";
 import type { BitbucketPullRequestTask } from "./bitbucket-types.ts";
 import { iterateBitbucketPages } from "./pagination.ts";
+import type { PullRequestIdentity } from "./pull-request-types.ts";
 import { getPullRequestPath } from "./pull-requests.ts";
-import type { PullRequestIdentity } from "./pull-requests.ts";
 import { parseTask } from "./response-parsers.ts";
 
 export async function getPullRequestTasks(

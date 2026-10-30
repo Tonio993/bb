@@ -1,8 +1,7 @@
 import { Command, CommanderError } from "commander";
 
 import type { CommandContext } from "./command-context.ts";
-
-import { registerCommands } from "../commands/index.ts";
+import { registerCommands } from "./commands/index.ts";
 
 export async function runCli(args: string[], context: CommandContext): Promise<void> {
     const program = new Command();

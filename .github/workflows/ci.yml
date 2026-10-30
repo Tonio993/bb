@@ -36,7 +36,7 @@ jobs:
         run: npm test
       - name: Check native Windows token storage
         if: runner.os == 'Windows'
-        run: node --test --test-name-pattern="Windows DPAPI round trip" test/token-backends.test.ts
+        run: node --test --test-name-pattern="Windows DPAPI round trip" test/auth/token-backends.test.ts
         env:
           BB_TEST_NATIVE_TOKEN_STORE: "1"
       - name: Check installable package

@@ -1,26 +1,26 @@
 import type { BitbucketApi } from "../bitbucket/bitbucket-client.ts";
 import type { BitbucketPullRequest } from "../bitbucket/bitbucket-types.ts";
-import {
-    getOpenPullRequest,
-    getPullRequest,
-    getPullRequestCommitMessageSuggestion,
-    mergePullRequest,
-} from "../bitbucket/pull-requests.ts";
-import type {
-    GetOpenPullRequestOptions,
-    MergePullRequestBody,
-    PullRequestIdentity,
-} from "../bitbucket/pull-requests.ts";
+import { getOpenPullRequest } from "../bitbucket/pull-request-search.ts";
 import {
     getPullRequestTask,
     getPullRequestTasks,
     resolvePullRequestTask,
 } from "../bitbucket/pull-request-tasks.ts";
-import { buildMergeCommitMessage } from "../pullrequest/merge-commit-message.ts";
+import type {
+    GetOpenPullRequestOptions,
+    MergePullRequestBody,
+    PullRequestIdentity,
+} from "../bitbucket/pull-request-types.ts";
+import {
+    getPullRequest,
+    getPullRequestCommitMessageSuggestion,
+    mergePullRequest,
+} from "../bitbucket/pull-requests.ts";
+import { buildMergeCommitMessage } from "../pull-request/merge-commit-message.ts";
 import {
     assertPullRequestCanMerge,
     shouldCompletePullRequestTask,
-} from "../pullrequest/merge-validation.ts";
+} from "../pull-request/merge-validation.ts";
 
 export type MergeOpenPullRequestOptions = GetOpenPullRequestOptions & {
     messagePrefix?: string;

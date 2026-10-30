@@ -1,17 +1,12 @@
 #!/usr/bin/env node
 import { CommanderError } from "commander";
 
-import { BitbucketClient } from "./bitbucket/bitbucket-client.ts";
-
-import { TokenStore } from "./auth/token-store.ts";
 import { createTokenBackend } from "./auth/token-backends.ts";
-
+import { TokenStore } from "./auth/token-store.ts";
+import { BitbucketClient } from "./bitbucket/bitbucket-client.ts";
 import { runCli } from "./cli/cli.ts";
-
 import type { CommandContext } from "./cli/command-context.ts";
-
-import { ConfigStore } from "./config/config.ts";
-
+import { ConfigStore } from "./config/config-store.ts";
 import { GitClient } from "./git/git-client.ts";
 
 const configStore = new ConfigStore();

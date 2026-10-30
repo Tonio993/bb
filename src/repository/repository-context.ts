@@ -1,5 +1,4 @@
-import type { BbConfig } from "../config/config.ts";
-
+import type { BbConfig } from "../config/config-schema.ts";
 import type { GitClient } from "../git/git-client.ts";
 
 export type RepositoryContext = {

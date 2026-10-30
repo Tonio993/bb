@@ -1,5 +1,4 @@
-import type { BbConfig } from "../config/config.ts";
-
+import type { BbConfig } from "../config/config-schema.ts";
 import { BitbucketApiError } from "./bitbucket-api-error.ts";
 
 type HttpMethod = "GET" | "POST" | "PUT" | "DELETE";

@@ -1,8 +1,7 @@
 import type { BitbucketApi } from "./bitbucket-client.ts";
-
 import type { BitbucketRepository } from "./bitbucket-types.ts";
-import { parseRepository } from "./response-parsers.ts";
 import { iterateBitbucketPages } from "./pagination.ts";
+import { parseRepository } from "./response-parsers.ts";
 
 export async function getProjectRepositories(
     client: Pick<BitbucketApi, "get">,
