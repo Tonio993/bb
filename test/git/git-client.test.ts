@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import childProcess from "node:child_process";
 import type { SpawnSyncOptions } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -324,7 +324,7 @@ test("bb git authenticates remote operations", async (t) => {
 
 test("the global bb directory option is restored after a Git failure", async (t) => {
     const execute = mockGit(t, { error: new Error("Git executable unavailable") });
-    const directory = mkdtempSync(join(tmpdir(), "bb-git-test-"));
+    const directory = realpathSync(mkdtempSync(join(tmpdir(), "bb-git-test-")));
     t.after(() => rmSync(directory, { recursive: true, force: true }));
     const originalDirectory = process.cwd();
     const client = new GitClient(
