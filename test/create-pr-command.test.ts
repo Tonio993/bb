@@ -10,6 +10,7 @@ import type { CommandContext } from "../src/cli/command-context.ts";
 import { registerCreatePrCommand } from "../src/commands/create-pr-command.ts";
 import type { BbConfig } from "../src/config/config.ts";
 import { GitClient } from "../src/git/git-client.ts";
+import { GitCommandError } from "../src/git/git-command-error.ts";
 import type { GitCommit } from "../src/git/git-client.ts";
 
 function createFixture(t: TestContext) {
@@ -186,7 +187,17 @@ test("a failed fetch stops branch validation and Pull Request creation", async (
 test("no non-merge commits prevents creation even with an explicit title", async (t) => {
     const fixture = createFixture(t);
     fixture.commits.length = 0;
-    await assert.rejects(fixture.run(["develop", "--title", "Custom title"]), /No commits found between/);
+    await assert.rejects(fixture.run(["develop", "--title", "Custom title"]), /No commits found between 'refs\/remotes\/upstream\/develop' and 'refs\/remotes\/upstream\/feature\/current'/);
+    assert.equal(fixture.request.mock.callCount(), 0);
+    assert.equal(fixture.output.mock.callCount(), 0);
+});
+
+test("a failed commit read preserves the Git error and prevents Pull Request creation", async (t) => {
+    const fixture = createFixture(t);
+    const failure = new GitCommandError("Unable to read remote commits.", { exitCode: 128, args: ["log"] });
+    fixture.readCommits.mock.mockImplementation(() => { throw failure; });
+    await assert.rejects(fixture.run(["develop"]), (error: unknown) => error === failure);
+    assert.equal(fixture.readCommits.mock.callCount(), 1);
     assert.equal(fixture.request.mock.callCount(), 0);
     assert.equal(fixture.output.mock.callCount(), 0);
 });

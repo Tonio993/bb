@@ -1,11 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { TestContext } from "node:test";
-
-import { GitClient } from "../src/git/git-client.ts";
-import type { GitCommit } from "../src/git/git-client.ts";
 import { resolvePullRequestBranches } from "../src/pullrequest/branches.ts";
-import { getPullRequestContent } from "../src/pullrequest/pull-request-content.ts";
+import { buildPullRequestContent } from "../src/pullrequest/pull-request-content.ts";
 import { resolvePullRequestReviewers } from "../src/pullrequest/reviewers.ts";
 
 test("one positional branch is the target and resolves the current branch once", (t) => {
@@ -70,40 +66,45 @@ test("reviewers use defaults, explicit overrides, or no reviewers", () => {
     assert.throws(() => resolvePullRequestReviewers(["anna"], true, defaults), /cannot be used together/);
 });
 
-function contentFixture(t: TestContext, commits: GitCommit[]) {
-    const git = new GitClient("upstream", () => {
-        throw new Error("Reading commit content must not request a token.");
-    }, () => { throw new Error("Reading commit content must not read the Bitbucket URL."); });
-    const readCommits = t.mock.method(git, "commitsBetween", () => commits);
-    return {
-        readCommits,
-        content: () => getPullRequestContent(git, "feature/ABC-123", "develop", "upstream"),
-    };
-}
-
-test("a single commit supplies the title while its description remains a Markdown list", (t) => {
-    const fixture = contentFixture(t, [{ subject: "Implement payment validation", body: "" }]);
-    assert.deepEqual(fixture.content(), {
+test("a single commit supplies the title while its description remains a Markdown list", () => {
+    assert.deepEqual(buildPullRequestContent([
+        { subject: "Implement payment validation", body: "" },
+    ], "feature/ABC-123"), {
         title: "Implement payment validation",
         description: "* Implement payment validation",
     });
-    assert.deepEqual(fixture.readCommits.mock.calls[0].arguments, [
-        "refs/remotes/upstream/develop", "refs/remotes/upstream/feature/ABC-123",
-    ]);
 });
 
-test("multiple commits preserve their order, nested body lines, and Markdown separators", (t) => {
-    const fixture = contentFixture(t, [
+test("multiple commits preserve their order, nested body lines, and Markdown separators", () => {
+    assert.deepEqual(buildPullRequestContent([
         { subject: "Add validation", body: " First detail\r\n\r\nSecond detail \r\n" },
         { subject: "Add coverage", body: "" },
-    ]);
-    assert.deepEqual(fixture.content(), {
+    ], "feature/ABC-123"), {
         title: "feature/ABC-123",
         description: "* Add validation\n    * First detail\n    * Second detail\n\n&nbsp;\n\n* Add coverage",
     });
 });
 
-test("no commits prevents creating an empty Pull Request", (t) => {
-    const fixture = contentFixture(t, []);
-    assert.throws(fixture.content, /No commits found between 'refs\/remotes\/upstream\/develop' and 'refs\/remotes\/upstream\/feature\/ABC-123'/);
+test("content generation requires at least one commit", () => {
+    assert.throws(() => buildPullRequestContent([], "feature/ABC-123"), /without commits/);
+});
+
+test("a single commit retains its nested body while ignoring blank lines", () => {
+    assert.deepEqual(buildPullRequestContent([
+        { subject: "Validate payments", body: "\n First detail\n \nSecond detail \n" },
+    ], "feature/ABC-123"), {
+        title: "Validate payments",
+        description: "* Validate payments\n    * First detail\n    * Second detail",
+    });
+});
+
+test("content generation accepts immutable commits and preserves Unicode and input order", () => {
+    const commits = Object.freeze([
+        Object.freeze({ subject: "Validate € amounts", body: "Handle café payments" }),
+        Object.freeze({ subject: "Add 日本語 coverage", body: "" }),
+    ]);
+    assert.deepEqual(buildPullRequestContent(commits, "feature/ABC-123"), {
+        title: "feature/ABC-123",
+        description: "* Validate € amounts\n    * Handle café payments\n\n&nbsp;\n\n* Add 日本語 coverage",
+    });
 });

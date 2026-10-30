@@ -945,6 +945,8 @@ Non usare branch locali per generare il contenuto della PR.
 
 # Contenuto create-pr
 
+`buildPullRequestContent(commits, sourceBranch)` è una funzione pura: riceve commit già letti e ordinati, accetta dati readonly e genera titolo e descrizione senza invocare Git o modificare gli input. Il comando `create-pr` costruisce i riferimenti remoti, legge i commit tramite `GitClient` e conserva nell'errore di confronto vuoto i riferimenti source e target. I test del contenuto usano direttamente dati, senza istanziare o simulare client Git.
+
 Escludere merge commit:
 
 ```text

@@ -15,7 +15,7 @@ import type {
 } from "../cli/command-context.ts";
 
 import {
-    getPullRequestContent,
+    buildPullRequestContent,
 } from "../pullrequest/pull-request-content.ts";
 
 import {
@@ -174,13 +174,15 @@ async function executeCreatePr(
     );
 
 
-    const content =
-        getPullRequestContent(
-            context.gitClient,
-            branches.sourceBranch,
-            branches.targetBranch,
-            remote,
-        );
+    const sourceRef = `refs/remotes/${remote}/${branches.sourceBranch}`;
+    const targetRef = `refs/remotes/${remote}/${branches.targetBranch}`;
+    const commits = context.gitClient.commitsBetween(targetRef, sourceRef);
+
+    if (commits.length === 0) {
+        throw new Error(`No commits found between '${targetRef}' and '${sourceRef}'.`);
+    }
+
+    const content = buildPullRequestContent(commits, branches.sourceBranch);
 
 
     const pullRequest =

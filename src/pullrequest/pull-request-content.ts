@@ -1,5 +1,5 @@
 import type {
-    GitClient,
+    GitCommit,
 } from "../git/git-client.ts";
 
 
@@ -9,27 +9,13 @@ export type PullRequestContent = {
 };
 
 
-export function getPullRequestContent(
-    gitClient: GitClient,
+export function buildPullRequestContent(
+    commits: readonly Readonly<GitCommit>[],
     sourceBranch: string,
-    targetBranch: string,
-    remote: string,
 ): PullRequestContent {
-    const sourceRef =
-        `refs/remotes/${remote}/${sourceBranch}`;
-
-    const targetRef =
-        `refs/remotes/${remote}/${targetBranch}`;
-
-    const commits =
-        gitClient.commitsBetween(
-            targetRef,
-            sourceRef,
-        );
-
     if (commits.length === 0) {
         throw new Error(
-            `No commits found between '${targetRef}' and '${sourceRef}'.`,
+            "Cannot generate Pull Request content without commits.",
         );
     }
 
