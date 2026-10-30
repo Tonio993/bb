@@ -64,7 +64,8 @@ export function parsePullRequest(value: unknown): BitbucketPullRequest {
         throw new Error("Bitbucket did not provide the Pull Request reviewers.");
     }
     const links = object(pr.links, "Pull Request links");
-    if (!Array.isArray(links.self)) throw new Error("Expected Pull Request self links to be an array.");
+    if (!Array.isArray(links.self))
+        throw new Error("Expected Pull Request self links to be an array.");
     return {
         ...pr,
         id: integer(pr.id, "Pull Request ID", 1),
@@ -106,11 +107,15 @@ export function parseCommitMessageSuggestion(value: unknown): BitbucketCommitMes
     return { title, body };
 }
 
-export function parsePage<T>(parseItem: (value: unknown) => T): (value: unknown) => BitbucketPage<T> {
+export function parsePage<T>(
+    parseItem: (value: unknown) => T,
+): (value: unknown) => BitbucketPage<T> {
     return (value) => {
         const page = object(value, "a Bitbucket page");
-        if (!Array.isArray(page.values)) throw new Error("Expected Bitbucket page values to be an array.");
-        if (typeof page.isLastPage !== "boolean") throw new Error("Expected Bitbucket page isLastPage to be a boolean.");
+        if (!Array.isArray(page.values))
+            throw new Error("Expected Bitbucket page values to be an array.");
+        if (typeof page.isLastPage !== "boolean")
+            throw new Error("Expected Bitbucket page isLastPage to be a boolean.");
         if (page.nextPageStart !== undefined && typeof page.nextPageStart !== "number") {
             throw new Error("Expected Bitbucket next page start to be a number.");
         }

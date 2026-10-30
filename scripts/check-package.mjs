@@ -33,38 +33,67 @@ try {
     const artifacts = join(fixture, "artifacts");
     mkdirSync(artifacts);
     console.log("Building and packing the CLI...");
-    const [packed] = JSON.parse(npm([
-        "pack", "--json", "--foreground-scripts=false", "--pack-destination", artifacts,
-    ], { cwd: projectRoot }));
+    const [packed] = JSON.parse(
+        npm(["pack", "--json", "--foreground-scripts=false", "--pack-destination", artifacts], {
+            cwd: projectRoot,
+        }),
+    );
 
     const expectedRuntime = readdirSync(join(projectRoot, "src"), { recursive: true })
         .filter((path) => path.endsWith(".ts"))
         .map((path) => `dist/${path.replaceAll("\\", "/").replace(/\.ts$/, ".js")}`);
     const packedPaths = packed.files.map(({ path }) => path);
     assert.deepEqual(packed.bundled, ["commander"]);
-    assert.deepEqual(packedPaths.filter((path) => !path.startsWith("node_modules/commander/")).sort(), [
-        ...expectedRuntime, "README.md", "package.json",
-    ].sort(), "The package must contain only runtime JavaScript, its manifest, README, and bundled Commander.");
+    assert.deepEqual(
+        packedPaths.filter((path) => !path.startsWith("node_modules/commander/")).sort(),
+        [...expectedRuntime, "README.md", "package.json"].sort(),
+        "The package must contain only runtime JavaScript, its manifest, README, and bundled Commander.",
+    );
     for (const file of ["package.json", "index.js", "lib/command.js", "LICENSE"]) {
-        assert.ok(packedPaths.includes(`node_modules/commander/${file}`), `Bundled Commander is missing ${file}.`);
+        assert.ok(
+            packedPaths.includes(`node_modules/commander/${file}`),
+            `Bundled Commander is missing ${file}.`,
+        );
     }
 
     const prefix = join(fixture, "installed cli");
     console.log("Installing the tarball offline with an empty cache into an isolated prefix...");
     npm([
-        "install", "--global", "--prefix", prefix, join(artifacts, packed.filename),
-        "--omit=dev", "--ignore-scripts", "--no-audit", "--no-fund", "--offline",
-        "--cache", join(fixture, "empty npm cache"),
+        "install",
+        "--global",
+        "--prefix",
+        prefix,
+        join(artifacts, packed.filename),
+        "--omit=dev",
+        "--ignore-scripts",
+        "--no-audit",
+        "--no-fund",
+        "--offline",
+        "--cache",
+        join(fixture, "empty npm cache"),
     ]);
 
-    const installedPackage = process.platform === "win32"
-        ? join(prefix, "node_modules", "bb")
-        : join(prefix, "lib", "node_modules", "bb");
+    const installedPackage =
+        process.platform === "win32"
+            ? join(prefix, "node_modules", "bb")
+            : join(prefix, "lib", "node_modules", "bb");
     const manifest = JSON.parse(readFileSync(join(installedPackage, "package.json"), "utf8"));
     assert.equal(manifest.bin.bb, "dist/main.js");
     assert.deepEqual(manifest.bundleDependencies, ["commander"]);
-    assert.equal(JSON.parse(readFileSync(join(installedPackage, "node_modules", "commander", "package.json"), "utf8")).name, "commander");
-    assert.ok(readFileSync(join(installedPackage, "dist", "main.js"), "utf8").startsWith("#!/usr/bin/env node\n"));
+    assert.equal(
+        JSON.parse(
+            readFileSync(
+                join(installedPackage, "node_modules", "commander", "package.json"),
+                "utf8",
+            ),
+        ).name,
+        "commander",
+    );
+    assert.ok(
+        readFileSync(join(installedPackage, "dist", "main.js"), "utf8").startsWith(
+            "#!/usr/bin/env node\n",
+        ),
+    );
     assert.equal(existsSync(join(installedPackage, "src")), false);
     assert.equal(existsSync(join(installedPackage, "node_modules", "typescript")), false);
 
@@ -78,20 +107,31 @@ try {
         USERPROFILE: join(fixture, "user home"),
     };
     console.log("Checking the installed bb launcher...");
-    const help = process.platform === "win32"
-        ? run(process.env.ComSpec || "cmd.exe", ["/d", "/s", "/c", `""${shim}" --help"`], {
-            env: environment, windowsVerbatimArguments: true,
-        })
-        : run(shim, ["--help"], { env: environment });
+    const help =
+        process.platform === "win32"
+            ? run(process.env.ComSpec || "cmd.exe", ["/d", "/s", "/c", `""${shim}" --help"`], {
+                  env: environment,
+                  windowsVerbatimArguments: true,
+              })
+            : run(shim, ["--help"], { env: environment });
     assert.match(help, /Usage: bb/);
     assert.match(help, /merge-pr/);
 
     const main = join(installedPackage, "dist", "main.js");
-    assert.match(run(process.execPath, [main, "merge-pr", "--help"], { env: environment }), /--complete-tasks/);
-    assert.match(run(process.execPath, [main, "token", "status"], {
-        env: { ...environment, BB_TOKEN: "package-smoke-token" },
-    }), /Bitbucket token source: BB_TOKEN/);
-    assert.equal(run(process.execPath, [main, "config", "git.remote"], { env: environment }).trim(), "origin");
+    assert.match(
+        run(process.execPath, [main, "merge-pr", "--help"], { env: environment }),
+        /--complete-tasks/,
+    );
+    assert.match(
+        run(process.execPath, [main, "token", "status"], {
+            env: { ...environment, BB_TOKEN: "package-smoke-token" },
+        }),
+        /Bitbucket token source: BB_TOKEN/,
+    );
+    assert.equal(
+        run(process.execPath, [main, "config", "git.remote"], { env: environment }).trim(),
+        "origin",
+    );
     console.log("Package contents, production-only installation, and CLI smoke checks passed.");
 } finally {
     assert.equal(dirname(resolve(fixture)), temporaryRoot);

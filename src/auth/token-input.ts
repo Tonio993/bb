@@ -13,14 +13,21 @@ export async function readTokenInput(
         let value = "";
         for await (const chunk of input) {
             value += chunk;
-            if (Buffer.byteLength(value, "utf8") > 4096) throw new Error("Token input is too large.");
+            if (Buffer.byteLength(value, "utf8") > 4096)
+                throw new Error("Token input is too large.");
         }
         return value;
     }
     if (!input.isTTY) {
-        throw new Error("Interactive token entry requires a terminal. Use 'bb token set --stdin' for piped input.");
+        throw new Error(
+            "Interactive token entry requires a terminal. Use 'bb token set --stdin' for piped input.",
+        );
     }
-    const muted = new Writable({ write(_chunk, _encoding, callback) { callback(); } });
+    const muted = new Writable({
+        write(_chunk, _encoding, callback) {
+            callback();
+        },
+    });
     const readline = createInterface({ input, output: muted, terminal: true, historySize: 0 });
     try {
         output.write("Bitbucket token: ");

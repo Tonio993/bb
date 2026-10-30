@@ -8,9 +8,17 @@ function terminal() {
     let displayed = "";
     const input = Object.assign(new PassThrough(), {
         isTTY: true,
-        setRawMode(value: boolean) { raw = value; return this; },
+        setRawMode(value: boolean) {
+            raw = value;
+            return this;
+        },
     });
-    const output = new Writable({ write(chunk, _encoding, callback) { displayed += chunk.toString(); callback(); } });
+    const output = new Writable({
+        write(chunk, _encoding, callback) {
+            displayed += chunk.toString();
+            callback();
+        },
+    });
     return { input, output, raw: () => raw, displayed: () => displayed };
 }
 
@@ -55,11 +63,19 @@ test("redirected input requires the explicit stdin option", async () => {
 test("stdin input supports chunked UTF-8 data without displaying it", async () => {
     const output = new PassThrough();
     let displayed = "";
-    output.on("data", (chunk) => { displayed += chunk.toString(); });
-    assert.equal(await readTokenInput(true, Readable.from(["token", "-value\n"]), output), "token-value\n");
+    output.on("data", (chunk) => {
+        displayed += chunk.toString();
+    });
+    assert.equal(
+        await readTokenInput(true, Readable.from(["token", "-value\n"]), output),
+        "token-value\n",
+    );
     assert.equal(displayed, "");
 });
 
 test("oversized stdin input is rejected", async () => {
-    await assert.rejects(readTokenInput(true, Readable.from(["x".repeat(4097)])), /input is too large/);
+    await assert.rejects(
+        readTokenInput(true, Readable.from(["x".repeat(4097)])),
+        /input is too large/,
+    );
 });

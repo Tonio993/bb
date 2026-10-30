@@ -6,10 +6,21 @@ import {
     getPullRequestCommitMessageSuggestion,
     mergePullRequest,
 } from "../bitbucket/pull-requests.ts";
-import type { GetOpenPullRequestOptions, MergePullRequestBody, PullRequestIdentity } from "../bitbucket/pull-requests.ts";
-import { getPullRequestTask, getPullRequestTasks, resolvePullRequestTask } from "../bitbucket/pull-request-tasks.ts";
+import type {
+    GetOpenPullRequestOptions,
+    MergePullRequestBody,
+    PullRequestIdentity,
+} from "../bitbucket/pull-requests.ts";
+import {
+    getPullRequestTask,
+    getPullRequestTasks,
+    resolvePullRequestTask,
+} from "../bitbucket/pull-request-tasks.ts";
 import { buildMergeCommitMessage } from "../pullrequest/merge-commit-message.ts";
-import { assertPullRequestCanMerge, shouldCompletePullRequestTask } from "../pullrequest/merge-validation.ts";
+import {
+    assertPullRequestCanMerge,
+    shouldCompletePullRequestTask,
+} from "../pullrequest/merge-validation.ts";
 
 export type MergeOpenPullRequestOptions = GetOpenPullRequestOptions & {
     messagePrefix?: string;
@@ -22,7 +33,9 @@ export async function mergeOpenPullRequest(
 ): Promise<BitbucketPullRequest> {
     const match = await getOpenPullRequest(client, options);
     if (!match) {
-        throw new Error(`No open Pull Request found from '${options.sourceBranch}' to '${options.targetBranch}'.`);
+        throw new Error(
+            `No open Pull Request found from '${options.sourceBranch}' to '${options.targetBranch}'.`,
+        );
     }
 
     const pullRequest = await getPullRequest(client, {
@@ -51,7 +64,9 @@ export async function mergeOpenPullRequest(
             currentPullRequest.fromRef.id !== pullRequest.fromRef.id ||
             currentPullRequest.toRef.id !== pullRequest.toRef.id
         ) {
-            throw new Error("Pull Request branches changed while completing tasks. Run the command again.");
+            throw new Error(
+                "Pull Request branches changed while completing tasks. Run the command again.",
+            );
         }
         assertPullRequestCanMerge(currentPullRequest);
     }
@@ -70,7 +85,10 @@ export async function mergeOpenPullRequest(
     return merged;
 }
 
-async function completePullRequestTasks(client: BitbucketApi, identity: PullRequestIdentity): Promise<void> {
+async function completePullRequestTasks(
+    client: BitbucketApi,
+    identity: PullRequestIdentity,
+): Promise<void> {
     // Collect every page before updates so resolving tasks cannot shift subsequent pages.
     const tasks = await getPullRequestTasks(client, identity);
     for (const task of tasks) {
@@ -79,7 +97,9 @@ async function completePullRequestTasks(client: BitbucketApi, identity: PullRequ
         if (!shouldCompletePullRequestTask(current)) continue;
         const completed = await resolvePullRequestTask(client, identity, task.id, current.version);
         if (completed.state !== "RESOLVED") {
-            throw new Error(`Bitbucket did not confirm completion of Pull Request task #${task.id}.`);
+            throw new Error(
+                `Bitbucket did not confirm completion of Pull Request task #${task.id}.`,
+            );
         }
     }
 }

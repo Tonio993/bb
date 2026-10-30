@@ -13,10 +13,7 @@ type MergePrOptions = {
     completeTasks?: boolean;
 };
 
-export function registerMergePrCommand(
-    program: Command,
-    context: CommandContext,
-): void {
+export function registerMergePrCommand(program: Command, context: CommandContext): void {
     program
         .command("merge-pr")
         .description("Merge an open Pull Request through the Bitbucket REST API.")
@@ -25,9 +22,14 @@ export function registerMergePrCommand(
         .option("--source-branch <branch>", "Source branch")
         .option("--target-branch <branch>", "Target branch")
         .option("--project-key <key>", "Override the configured Bitbucket project")
-        .option("--message-prefix <prefix>", "Prepend a prefix to Bitbucket's suggested merge commit message")
+        .option(
+            "--message-prefix <prefix>",
+            "Prepend a prefix to Bitbucket's suggested merge commit message",
+        )
         .option("--complete-tasks", "Complete all open Pull Request tasks before merging")
-        .addHelpText("after", `
+        .addHelpText(
+            "after",
+            `
 Examples:
   bb merge-pr develop
   bb merge-pr feature/my-change develop
@@ -37,40 +39,36 @@ Examples:
   bb merge-pr develop --message-prefix "[RELEASE] "
   bb merge-pr develop --complete-tasks
   bb -C C:\\repository merge-pr develop
-`)
-        .action(async (
-            source: string | undefined,
-            target: string | undefined,
-            options: MergePrOptions,
-        ) => {
-            const branches = resolvePullRequestBranches(
-                source,
-                target,
-                () => context.gitClient.currentBranch(),
-                options,
-            );
-            const repository = resolveRepositoryContext(
-                context.config,
-                context.gitClient,
-                { projectKey: options.projectKey },
-            );
-            const merged = await mergeOpenPullRequest(
-                context.bitbucketClient,
-                {
+`,
+        )
+        .action(
+            async (
+                source: string | undefined,
+                target: string | undefined,
+                options: MergePrOptions,
+            ) => {
+                const branches = resolvePullRequestBranches(
+                    source,
+                    target,
+                    () => context.gitClient.currentBranch(),
+                    options,
+                );
+                const repository = resolveRepositoryContext(context.config, context.gitClient, {
+                    projectKey: options.projectKey,
+                });
+                const merged = await mergeOpenPullRequest(context.bitbucketClient, {
                     ...repository,
                     ...branches,
                     messagePrefix: options.messagePrefix,
                     completeTasks: options.completeTasks,
-                },
-            );
-            const url = merged.links.self[0]?.href;
+                });
+                const url = merged.links.self[0]?.href;
 
-            if (!url) {
-                throw new Error(
-                    "Bitbucket did not provide the merged Pull Request URL.",
-                );
-            }
+                if (!url) {
+                    throw new Error("Bitbucket did not provide the merged Pull Request URL.");
+                }
 
-            console.log(url);
-        });
+                console.log(url);
+            },
+        );
 }

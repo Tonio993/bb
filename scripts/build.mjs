@@ -11,10 +11,15 @@ if (dirname(outputDirectory) !== projectRoot) {
 
 rmSync(outputDirectory, { recursive: true, force: true });
 
-const result = spawnSync(process.execPath, [
-    join(projectRoot, "node_modules", "typescript", "bin", "tsc"),
-    "--project", join(projectRoot, "tsconfig.build.json"),
-], { stdio: "inherit", windowsHide: true });
+const result = spawnSync(
+    process.execPath,
+    [
+        join(projectRoot, "node_modules", "typescript", "bin", "tsc"),
+        "--project",
+        join(projectRoot, "tsconfig.build.json"),
+    ],
+    { stdio: "inherit", windowsHide: true },
+);
 
 if (result.error) {
     throw result.error;

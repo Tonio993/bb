@@ -1,43 +1,19 @@
-import type {
-    Command,
-} from "commander";
+import type { Command } from "commander";
 
-import {
-    createInterface,
-} from "node:readline/promises";
+import { createInterface } from "node:readline/promises";
 
-import {
-    stdin,
-    stdout,
-} from "node:process";
+import { stdin, stdout } from "node:process";
 
-import type {
-    CommandContext,
-} from "../cli/command-context.ts";
+import type { CommandContext } from "../cli/command-context.ts";
 
-import {
-    CONFIG_KEYS,
-    isConfigKey,
-} from "../config/config.ts";
+import { CONFIG_KEYS, isConfigKey } from "../config/config.ts";
 
-
-export function registerConfigCommand(
-    program: Command,
-    context: CommandContext,
-): void {
+export function registerConfigCommand(program: Command, context: CommandContext): void {
     const command = program
         .command("config")
-        .description(
-            "View and modify the global bb configuration.",
-        )
-        .argument(
-            "[key]",
-            "Configuration key",
-        )
-        .argument(
-            "[value]",
-            "New configuration value",
-        )
+        .description("View and modify the global bb configuration.")
+        .argument("[key]", "Configuration key")
+        .argument("[value]", "New configuration value")
         .addHelpText(
             "after",
             `
@@ -53,55 +29,31 @@ Examples:
   bb config git.remote "origin"
 `,
         )
-        .action(
-            async (
-                key: string | undefined,
-                value: string | undefined,
-            ) => {
-                if (!key) {
-                    showConfiguration(
-                        context,
-                    );
+        .action(async (key: string | undefined, value: string | undefined) => {
+            if (!key) {
+                showConfiguration(context);
 
-                    return;
-                }
+                return;
+            }
 
-                if (!isConfigKey(key)) {
-                    throw new Error(
-                        `Unknown configuration key '${key}'.\n\n` +
+            if (!isConfigKey(key)) {
+                throw new Error(
+                    `Unknown configuration key '${key}'.\n\n` +
                         `Available keys:\n` +
-                        CONFIG_KEYS
-                            .map(
-                                (configKey) =>
-                                    `  ${configKey}`,
-                            )
-                            .join("\n"),
-                    );
-                }
-
-                if (value === undefined) {
-                    showConfigurationValue(
-                        context,
-                        key,
-                    );
-
-                    return;
-                }
-
-                context.configStore.set(
-                    key,
-                    value,
+                        CONFIG_KEYS.map((configKey) => `  ${configKey}`).join("\n"),
                 );
+            }
 
-                console.log(
-                    `${key} = ${formatValue(
-                        context.configStore.get(
-                            key,
-                        ),
-                    )}`,
-                );
-            },
-        );
+            if (value === undefined) {
+                showConfigurationValue(context, key);
+
+                return;
+            }
+
+            context.configStore.set(key, value);
+
+            console.log(`${key} = ${formatValue(context.configStore.get(key))}`);
+        });
 
     command
         .command("list")
@@ -114,122 +66,68 @@ Examples:
         .action(async () => initializeConfiguration(context));
 }
 
-
-function showConfiguration(
-    context: CommandContext,
-): void {
+function showConfiguration(context: CommandContext): void {
     const config = context.configStore.snapshot();
-    console.log(
-        `Configuration file: ${context.configStore.path}`,
-    );
+    console.log(`Configuration file: ${context.configStore.path}`);
 
     console.log();
 
     for (const key of CONFIG_KEYS) {
-        console.log(
-            `${key} = ${formatValue(
-                config[key],
-            )}`,
-        );
+        console.log(`${key} = ${formatValue(config[key])}`);
     }
 }
 
-
-function showConfigurationValue(
-    context: CommandContext,
-    key: typeof CONFIG_KEYS[number],
-): void {
-    const value =
-        context.configStore.get(
-            key,
-        );
+function showConfigurationValue(context: CommandContext, key: (typeof CONFIG_KEYS)[number]): void {
+    const value = context.configStore.get(key);
 
     if (value === undefined) {
         return;
     }
 
-    console.log(
-        formatValue(value),
-    );
+    console.log(formatValue(value));
 }
 
-
-async function initializeConfiguration(
-    context: CommandContext,
-): Promise<void> {
+async function initializeConfiguration(context: CommandContext): Promise<void> {
     const config = context.configStore.snapshot();
-    const readline =
-        createInterface({
-            input: stdin,
-            output: stdout,
-        });
+    const readline = createInterface({
+        input: stdin,
+        output: stdout,
+    });
 
     try {
-        console.log(
-            `Initializing bb configuration:`,
-        );
+        console.log(`Initializing bb configuration:`);
 
-        console.log(
-            context.configStore.path,
-        );
+        console.log(context.configStore.path);
 
         console.log();
 
+        const bitbucketUrl = await askRequired(readline, "Bitbucket URL", config["bitbucket.url"]);
 
-        const bitbucketUrl =
-            await askRequired(
-                readline,
-                "Bitbucket URL",
-                config["bitbucket.url"],
-            );
+        const projectKey = await askRequired(
+            readline,
+            "Bitbucket project key",
+            config["bitbucket.projectKey"],
+        );
 
+        const currentReviewers = config["bitbucket.defaultReviewers"];
 
-        const projectKey =
-            await askRequired(
-                readline,
-                "Bitbucket project key",
-                config["bitbucket.projectKey"],
-            );
+        const reviewersInput = await readline.question(
+            buildPrompt("Default reviewers (comma separated)", currentReviewers.join(",")),
+        );
 
+        const defaultReviewers = reviewersInput.trim()
+            ? reviewersInput.split(",")
+            : currentReviewers;
 
-        const currentReviewers =
-            config["bitbucket.defaultReviewers"];
+        const currentRemote = config["git.remote"];
 
-        const reviewersInput =
-            await readline.question(
-                buildPrompt(
-                    "Default reviewers (comma separated)",
-                    currentReviewers.join(","),
-                ),
-            );
+        const remoteInput = await readline.question(buildPrompt("Git remote", currentRemote));
 
-        const defaultReviewers =
-            reviewersInput.trim()
-                ? reviewersInput
-                    .split(",")
-                : currentReviewers;
-
-
-        const currentRemote =
-            config["git.remote"];
-
-        const remoteInput =
-            await readline.question(
-                buildPrompt(
-                    "Git remote",
-                    currentRemote,
-                ),
-            );
-
-        const remote =
-            remoteInput.trim()
-            || currentRemote;
-
+        const remote = remoteInput.trim() || currentRemote;
 
         context.configStore.save({
             bitbucket: {
-                url:
-                    bitbucketUrl,
+                url: bitbucketUrl,
 
                 projectKey,
 
@@ -241,52 +139,32 @@ async function initializeConfiguration(
             },
         });
 
-
         console.log();
-        console.log(
-            "Configuration saved successfully.",
-        );
+        console.log("Configuration saved successfully.");
     } finally {
         readline.close();
     }
 }
 
-
 async function askRequired(
-    readline: ReturnType<
-        typeof createInterface
-    >,
+    readline: ReturnType<typeof createInterface>,
     label: string,
     currentValue?: string,
 ): Promise<string> {
     while (true) {
-        const value =
-            await readline.question(
-                buildPrompt(
-                    label,
-                    currentValue,
-                ),
-            );
+        const value = await readline.question(buildPrompt(label, currentValue));
 
-        const resolved =
-            value.trim()
-            || currentValue;
+        const resolved = value.trim() || currentValue;
 
         if (resolved) {
             return resolved;
         }
 
-        console.log(
-            `${label} is required.`,
-        );
+        console.log(`${label} is required.`);
     }
 }
 
-
-function buildPrompt(
-    label: string,
-    currentValue?: string,
-): string {
+function buildPrompt(label: string, currentValue?: string): string {
     if (currentValue) {
         return `${label} [${currentValue}]: `;
     }
@@ -294,10 +172,7 @@ function buildPrompt(
     return `${label}: `;
 }
 
-
-function formatValue(
-    value: string | string[] | undefined,
-): string {
+function formatValue(value: string | string[] | undefined): string {
     if (Array.isArray(value)) {
         return value.join(",");
     }

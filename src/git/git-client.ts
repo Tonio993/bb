@@ -1,19 +1,12 @@
-import {
-    spawnSync,
-} from "node:child_process";
+import { spawnSync } from "node:child_process";
 import type { SpawnSyncOptionsWithStringEncoding } from "node:child_process";
 
-import {
-    basename,
-} from "node:path";
+import { basename } from "node:path";
 
-import {
-    GitCommandError,
-} from "./git-command-error.ts";
+import { GitCommandError } from "./git-command-error.ts";
 import { normalizeBitbucketUrl } from "../config/bitbucket-url.ts";
 
-type TokenProvider =
-    () => string;
+type TokenProvider = () => string;
 
 type BitbucketUrlProvider = () => string | undefined;
 
@@ -34,11 +27,21 @@ export type GitCommit = {
     body: string;
 };
 
-export type GitOperations = Pick<GitClient,
-    "run" | "currentBranch" | "currentRepository" | "fetch" | "assertRemoteBranchExists" | "commitsBetween"
+export type GitOperations = Pick<
+    GitClient,
+    | "run"
+    | "currentBranch"
+    | "currentRepository"
+    | "fetch"
+    | "assertRemoteBranchExists"
+    | "commitsBetween"
 >;
 
-export type GitCommandRunner = (command: string, args: string[], options: SpawnSyncOptionsWithStringEncoding) => {
+export type GitCommandRunner = (
+    command: string,
+    args: string[],
+    options: SpawnSyncOptionsWithStringEncoding,
+) => {
     stdout: string | null;
     stderr: string | null;
     status: number | null;
@@ -55,7 +58,6 @@ export class GitClient {
     private readonly bitbucketUrlProvider: BitbucketUrlProvider;
     private readonly executeCommand: GitCommandRunner;
 
-
     constructor(
         remote: string,
         tokenProvider: TokenProvider,
@@ -65,87 +67,44 @@ export class GitClient {
         this.remote = remote;
         this.tokenProvider = tokenProvider;
         this.bitbucketUrlProvider = bitbucketUrlProvider;
-        this.executeCommand = options.execute ?? ((command, args, settings) => spawnSync(command, args, settings));
+        this.executeCommand =
+            options.execute ?? ((command, args, settings) => spawnSync(command, args, settings));
     }
 
-
-    run(
-        args: string[],
-        options: GitRunOptions = {},
-    ): number {
-        return this.execute(
-            args,
-            options.authenticated ?? requiresAuthentication(args),
-            "inherit",
-        ).exitCode;
+    run(args: string[], options: GitRunOptions = {}): number {
+        return this.execute(args, options.authenticated ?? requiresAuthentication(args), "inherit")
+            .exitCode;
     }
-
 
     currentBranch(): string {
-        const branch =
-            this.capture([
-                "branch",
-                "--show-current",
-            ]);
+        const branch = this.capture(["branch", "--show-current"]);
 
         if (!branch) {
-            throw new Error(
-                "Unable to determine the current Git branch.",
-            );
+            throw new Error("Unable to determine the current Git branch.");
         }
 
         return branch;
     }
 
-
     currentRepository(): string {
-        const repositoryPath =
-            this.capture([
-                "rev-parse",
-                "--show-toplevel",
-            ]);
+        const repositoryPath = this.capture(["rev-parse", "--show-toplevel"]);
 
         if (!repositoryPath) {
-            throw new Error(
-                "Unable to determine the current Git repository.",
-            );
+            throw new Error("Unable to determine the current Git repository.");
         }
 
-        return basename(
-            repositoryPath,
-        );
+        return basename(repositoryPath);
     }
 
-
-    fetch(
-        remote: string = this.remote,
-    ): void {
-        this.capture(
-            [
-                "fetch",
-                remote,
-            ],
-            true,
-        );
+    fetch(remote: string = this.remote): void {
+        this.capture(["fetch", remote], true);
     }
 
-
-    localBranchExists(
-        branch: string,
-    ): boolean {
-        return this.branchExists([
-            "show-ref",
-            "--verify",
-            "--quiet",
-            `refs/heads/${branch}`,
-        ]);
+    localBranchExists(branch: string): boolean {
+        return this.branchExists(["show-ref", "--verify", "--quiet", `refs/heads/${branch}`]);
     }
 
-
-    remoteBranchExists(
-        branch: string,
-        remote: string = this.remote,
-    ): boolean {
+    remoteBranchExists(branch: string, remote: string = this.remote): boolean {
         return this.branchExists([
             "show-ref",
             "--verify",
@@ -154,20 +113,13 @@ export class GitClient {
         ]);
     }
 
-
-    private capture(
-        args: string[],
-        authenticated = false,
-    ): string {
+    private capture(args: string[], authenticated = false): string {
         const result = this.execute(args, authenticated);
         this.assertExitCode(result, args);
         return result.stdout.trim();
     }
 
-
-    private branchExists(
-        args: string[],
-    ): boolean {
+    private branchExists(args: string[]): boolean {
         const result = this.execute(args);
         this.assertExitCode(result, args, [0, 1]);
         return result.exitCode === 0;
@@ -189,9 +141,10 @@ export class GitClient {
 
         if (result.error) {
             const code = (result.error as NodeJS.ErrnoException).code;
-            const message = code === "ENOBUFS"
-                ? "Git output exceeded the 16 MiB capture limit. Narrow the commit range or reduce the command output."
-                : `Unable to execute Git: ${result.error.message}`;
+            const message =
+                code === "ENOBUFS"
+                    ? "Git output exceeded the 16 MiB capture limit. Narrow the commit range or reduce the command output."
+                    : `Unable to execute Git: ${result.error.message}`;
             throw new GitCommandError(message, { args, signal: result.signal ?? undefined });
         }
 
@@ -226,10 +179,7 @@ export class GitClient {
         }
     }
 
-
-    private createEnvironment(
-        authenticated: boolean,
-    ): NodeJS.ProcessEnv {
+    private createEnvironment(authenticated: boolean): NodeJS.ProcessEnv {
         if (!authenticated) {
             return process.env;
         }
@@ -238,69 +188,45 @@ export class GitClient {
             ...process.env,
         };
 
-        const configCount =
-            getGitConfigCount(
-                environment.GIT_CONFIG_COUNT,
-            );
+        const configCount = getGitConfigCount(environment.GIT_CONFIG_COUNT);
 
         const authenticationKey = getAuthenticationKey(this.bitbucketUrlProvider());
 
-        environment.GIT_CONFIG_COUNT =
-            String(configCount + 1);
+        environment.GIT_CONFIG_COUNT = String(configCount + 1);
 
-        environment[
-            `GIT_CONFIG_KEY_${configCount}`
-        ] = authenticationKey;
+        environment[`GIT_CONFIG_KEY_${configCount}`] = authenticationKey;
 
-        environment[
-            `GIT_CONFIG_VALUE_${configCount}`
-        ] =
+        environment[`GIT_CONFIG_VALUE_${configCount}`] =
             `Authorization: Bearer ${this.tokenProvider()}`;
 
         return environment;
     }
-    
 
     assertRemoteBranchExists(
         branch: string,
         branchType?: string,
         remote: string = this.remote,
     ): void {
-        if (
-            this.remoteBranchExists(
-                branch,
-                remote,
-            )
-        ) {
+        if (this.remoteBranchExists(branch, remote)) {
             return;
         }
 
-        const description =
-            branchType
-                ? `Remote ${branchType} branch`
-                : "Remote branch";
+        const description = branchType ? `Remote ${branchType} branch` : "Remote branch";
 
-        throw new Error(
-            `${description} '${remote}/${branch}' does not exist.`,
-        );
+        throw new Error(`${description} '${remote}/${branch}' does not exist.`);
     }
 
-
-    commitsBetween(
-        targetRef: string,
-        sourceRef: string,
-    ): GitCommit[] {
+    commitsBetween(targetRef: string, sourceRef: string): GitCommit[] {
         const fieldSeparator = "\x1e";
         const commitSeparator = "\x1d";
 
-        const output =
-            this.capture([
-                "log",
-                `${targetRef}..${sourceRef}`,
-                "--no-merges",
-                "--reverse",
-                "--format=%s%x1e%b%x1d",
-            ]);
+        const output = this.capture([
+            "log",
+            `${targetRef}..${sourceRef}`,
+            "--no-merges",
+            "--reverse",
+            "--format=%s%x1e%b%x1d",
+        ]);
 
         if (!output) {
             return [];
@@ -311,10 +237,7 @@ export class GitClient {
             .map((entry) => entry.trim())
             .filter(Boolean)
             .map((entry) => {
-                const separatorIndex =
-                    entry.indexOf(
-                        fieldSeparator,
-                    );
+                const separatorIndex = entry.indexOf(fieldSeparator);
 
                 if (separatorIndex < 0) {
                     return {
@@ -324,29 +247,15 @@ export class GitClient {
                 }
 
                 return {
-                    subject:
-                        entry
-                            .slice(
-                                0,
-                                separatorIndex,
-                            )
-                            .trim(),
+                    subject: entry.slice(0, separatorIndex).trim(),
 
-                    body:
-                        entry
-                            .slice(
-                                separatorIndex + 1,
-                            )
-                            .trim(),
+                    body: entry.slice(separatorIndex + 1).trim(),
                 };
             });
     }
 }
 
-
-function requiresAuthentication(
-    args: readonly string[],
-): boolean {
+function requiresAuthentication(args: readonly string[]): boolean {
     const optionsWithValue = [
         "-C",
         "-c",
@@ -362,8 +271,10 @@ function requiresAuthentication(
         const argument = args[index];
 
         if (
-            argument === "--help" || argument === "-h" ||
-            argument === "--version" || argument === "-v"
+            argument === "--help" ||
+            argument === "-h" ||
+            argument === "--version" ||
+            argument === "-v"
         ) {
             return false;
         }
@@ -390,33 +301,23 @@ function requiresAuthentication(
             }
         }
 
-        return [
-            "fetch",
-            "pull",
-            "push",
-            "clone",
-            "ls-remote",
-        ].includes(argument);
+        return ["fetch", "pull", "push", "clone", "ls-remote"].includes(argument);
     }
 
     return false;
 }
 
-
-function getGitConfigCount(
-    value: string | undefined,
-): number {
+function getGitConfigCount(value: string | undefined): number {
     if (value === undefined) {
         return 0;
     }
 
     const count = Number(value);
 
-    if (
-        !/^\d+$/.test(value) ||
-        !Number.isSafeInteger(count + 1)
-    ) {
-        throw new Error("Invalid GIT_CONFIG_COUNT. Expected a non-negative decimal integer with room for one additional entry.");
+    if (!/^\d+$/.test(value) || !Number.isSafeInteger(count + 1)) {
+        throw new Error(
+            "Invalid GIT_CONFIG_COUNT. Expected a non-negative decimal integer with room for one additional entry.",
+        );
     }
 
     return count;
@@ -426,8 +327,8 @@ function getAuthenticationKey(value: string | undefined): string {
     if (!value?.trim()) {
         throw new Error(
             "Required configuration 'bitbucket.url' is missing.\n\n" +
-            'Configure it with:\n  bb config bitbucket.url "https://bitbucket.company.com"\n\n' +
-            "Or run:\n  bb config init",
+                'Configure it with:\n  bb config bitbucket.url "https://bitbucket.company.com"\n\n' +
+                "Or run:\n  bb config init",
         );
     }
 

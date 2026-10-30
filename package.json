@@ -20,10 +20,14 @@
     "prepack": "npm run build",
     "typecheck": "tsc --noEmit",
     "test": "node --test \"test/*.test.ts\"",
-    "test:package": "node scripts/check-package.mjs"
+    "test:package": "node scripts/check-package.mjs",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "check": "npm run format:check && npm run typecheck && npm test"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
+    "prettier": "3.9.10",
     "typescript": "^5.8.0"
   },
   "dependencies": {

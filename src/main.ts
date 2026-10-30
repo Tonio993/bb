@@ -1,57 +1,34 @@
 #!/usr/bin/env node
-import {
-    CommanderError,
-} from "commander";
+import { CommanderError } from "commander";
 
-import {
-    BitbucketClient,
-} from "./bitbucket/bitbucket-client.ts";
+import { BitbucketClient } from "./bitbucket/bitbucket-client.ts";
 
-import {
-    TokenStore,
-} from "./auth/token-store.ts";
+import { TokenStore } from "./auth/token-store.ts";
 import { createTokenBackend } from "./auth/token-backends.ts";
 
-import {
-    runCli,
-} from "./cli/cli.ts";
+import { runCli } from "./cli/cli.ts";
 
-import type {
-    CommandContext,
-} from "./cli/command-context.ts";
+import type { CommandContext } from "./cli/command-context.ts";
 
-import {
-    ConfigStore,
-} from "./config/config.ts";
+import { ConfigStore } from "./config/config.ts";
 
-import {
-    GitClient,
-} from "./git/git-client.ts";
+import { GitClient } from "./git/git-client.ts";
 
-
-const configStore =
-    new ConfigStore();
+const configStore = new ConfigStore();
 
 const tokenStore = new TokenStore(createTokenBackend());
 
-
-let cachedConfig:
-    ReturnType<ConfigStore["loadRequired"]> | undefined;
-
+let cachedConfig: ReturnType<ConfigStore["loadRequired"]> | undefined;
 
 let cachedBitbucketClient: BitbucketClient | undefined;
 
-
 let cachedGitClient: GitClient | undefined;
 
-
 const getConfig = () => {
-    cachedConfig ??=
-        configStore.loadRequired();
+    cachedConfig ??= configStore.loadRequired();
 
     return cachedConfig;
 };
-
 
 const context: CommandContext = {
     tokenStore,
@@ -62,24 +39,19 @@ const context: CommandContext = {
     },
 
     get bitbucketClient() {
-        cachedBitbucketClient ??=
-            new BitbucketClient(
-                getConfig().bitbucket,
-                () => tokenStore.get(),
-            );
+        cachedBitbucketClient ??= new BitbucketClient(getConfig().bitbucket, () =>
+            tokenStore.get(),
+        );
 
         return cachedBitbucketClient;
     },
 
     get gitClient() {
         if (!cachedGitClient) {
-            const remote =
-                configStore.get("git.remote");
+            const remote = configStore.get("git.remote");
 
             cachedGitClient = new GitClient(
-                typeof remote === "string"
-                    ? remote
-                    : "origin",
+                typeof remote === "string" ? remote : "origin",
                 () => tokenStore.get(),
                 () => {
                     const url = configStore.get("bitbucket.url");
@@ -92,24 +64,15 @@ const context: CommandContext = {
     },
 };
 
-
 try {
-    await runCli(
-        process.argv.slice(2),
-        context,
-    );
+    await runCli(process.argv.slice(2), context);
 } catch (error) {
     if (error instanceof CommanderError) {
         process.exitCode = error.exitCode;
     } else {
-        const message =
-            error instanceof Error
-                ? error.message
-                : String(error);
+        const message = error instanceof Error ? error.message : String(error);
 
-        console.error(
-            `Error: ${message}`,
-        );
+        console.error(`Error: ${message}`);
 
         process.exitCode = 1;
     }

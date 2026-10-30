@@ -22,13 +22,19 @@ export class TokenStore {
         this.environment = environment;
     }
 
-    get backend(): string { return this.storage.name; }
+    get backend(): string {
+        return this.storage.name;
+    }
 
     get(): string {
-        if (this.environment.BB_TOKEN !== undefined) return normalizeToken(this.environment.BB_TOKEN);
+        if (this.environment.BB_TOKEN !== undefined)
+            return normalizeToken(this.environment.BB_TOKEN);
         if (this.cachedToken) return this.cachedToken;
         const token = this.storage.read();
-        if (!token) throw new Error("Bitbucket token is not configured. Run 'bb token set' or set BB_TOKEN.");
+        if (!token)
+            throw new Error(
+                "Bitbucket token is not configured. Run 'bb token set' or set BB_TOKEN.",
+            );
         this.cachedToken = normalizeToken(token);
         return this.cachedToken;
     }
@@ -55,5 +61,7 @@ export class TokenStore {
         this.storage.delete();
     }
 
-    clearCache(): void { this.cachedToken = undefined; }
+    clearCache(): void {
+        this.cachedToken = undefined;
+    }
 }

@@ -1,35 +1,18 @@
-import type {
-    Command,
-} from "commander";
+import type { Command } from "commander";
 
-import {
-    Option,
-} from "commander";
+import { Option } from "commander";
 
-import {
-    createPullRequest,
-} from "../bitbucket/pull-requests.ts";
+import { createPullRequest } from "../bitbucket/pull-requests.ts";
 
-import type {
-    CommandContext,
-} from "../cli/command-context.ts";
+import type { CommandContext } from "../cli/command-context.ts";
 
-import {
-    buildPullRequestContent,
-} from "../pullrequest/pull-request-content.ts";
+import { buildPullRequestContent } from "../pullrequest/pull-request-content.ts";
 
-import {
-    resolvePullRequestBranches,
-} from "../pullrequest/branches.ts";
+import { resolvePullRequestBranches } from "../pullrequest/branches.ts";
 
-import {
-    resolvePullRequestReviewers,
-} from "../pullrequest/reviewers.ts";
+import { resolvePullRequestReviewers } from "../pullrequest/reviewers.ts";
 
-import {
-    resolveRepositoryContext,
-} from "../repository/repository-context.ts";
-
+import { resolveRepositoryContext } from "../repository/repository-context.ts";
 
 type CreatePrOptions = {
     sourceBranch?: string;
@@ -40,40 +23,16 @@ type CreatePrOptions = {
     reviewers: boolean;
 };
 
-
-export function registerCreatePrCommand(
-    program: Command,
-    context: CommandContext,
-): void {
+export function registerCreatePrCommand(program: Command, context: CommandContext): void {
     program
         .command("create-pr")
-        .description(
-            "Create a Pull Request on Bitbucket.",
-        )
-        .argument(
-            "[source]",
-            "Source branch, or target branch when used alone",
-        )
-        .argument(
-            "[target]",
-            "Target branch",
-        )
-        .option(
-            "--source-branch <branch>",
-            "Source branch",
-        )
-        .option(
-            "--target-branch <branch>",
-            "Target branch",
-        )
-        .option(
-            "--title <title>",
-            "Override the generated Pull Request title",
-        )
-        .option(
-            "--project-key <key>",
-            "Override the configured Bitbucket project",
-        )
+        .description("Create a Pull Request on Bitbucket.")
+        .argument("[source]", "Source branch, or target branch when used alone")
+        .argument("[target]", "Target branch")
+        .option("--source-branch <branch>", "Source branch")
+        .option("--target-branch <branch>", "Target branch")
+        .option("--title <title>", "Override the generated Pull Request title")
+        .option("--project-key <key>", "Override the configured Bitbucket project")
         .option(
             "--reviewer <name>",
             "Add a reviewer; can be specified multiple times or as a comma-separated list",
@@ -81,10 +40,9 @@ export function registerCreatePrCommand(
             [],
         )
         .addOption(
-            new Option(
-                "--no-reviewers",
-                "Create the Pull Request without reviewers",
-            ).conflicts("reviewer"),
+            new Option("--no-reviewers", "Create the Pull Request without reviewers").conflicts(
+                "reviewer",
+            ),
         )
         .addHelpText(
             "after",
@@ -107,16 +65,10 @@ Examples:
                 target: string | undefined,
                 options: CreatePrOptions,
             ) => {
-                await executeCreatePr(
-                    source,
-                    target,
-                    options,
-                    context,
-                );
+                await executeCreatePr(source, target, options, context);
             },
         );
 }
-
 
 async function executeCreatePr(
     source: string | undefined,
@@ -124,55 +76,32 @@ async function executeCreatePr(
     options: CreatePrOptions,
     context: CommandContext,
 ): Promise<void> {
-    const branches =
-        resolvePullRequestBranches(
-            source,
-            target,
-            () =>
-                context.gitClient.currentBranch(),
-            options,
-        );
+    const branches = resolvePullRequestBranches(
+        source,
+        target,
+        () => context.gitClient.currentBranch(),
+        options,
+    );
 
-    const reviewers =
-        resolvePullRequestReviewers(
-            options.reviewer,
-            options.reviewers === false,
-            context.config.bitbucket.defaultReviewers,
-        );
+    const reviewers = resolvePullRequestReviewers(
+        options.reviewer,
+        options.reviewers === false,
+        context.config.bitbucket.defaultReviewers,
+    );
 
-    const repositoryContext =
-        resolveRepositoryContext(
-            context.config,
-            context.gitClient,
-            {
-                projectKey:
-                    options.projectKey,
-            },
-        );
+    const repositoryContext = resolveRepositoryContext(context.config, context.gitClient, {
+        projectKey: options.projectKey,
+    });
 
-    const remote =
-        context.config.git.remote;
-
+    const remote = context.config.git.remote;
 
     // Update remote references before validating branches
     // and generating Pull Request content.
-    context.gitClient.fetch(
-        remote,
-    );
+    context.gitClient.fetch(remote);
 
+    context.gitClient.assertRemoteBranchExists(branches.sourceBranch, "source", remote);
 
-    context.gitClient.assertRemoteBranchExists(
-        branches.sourceBranch,
-        "source",
-        remote,
-    );
-
-    context.gitClient.assertRemoteBranchExists(
-        branches.targetBranch,
-        "target",
-        remote,
-    );
-
+    context.gitClient.assertRemoteBranchExists(branches.targetBranch, "target", remote);
 
     const sourceRef = `refs/remotes/${remote}/${branches.sourceBranch}`;
     const targetRef = `refs/remotes/${remote}/${branches.targetBranch}`;
@@ -184,63 +113,36 @@ async function executeCreatePr(
 
     const content = buildPullRequestContent(commits, branches.sourceBranch);
 
+    const pullRequest = await createPullRequest(context.bitbucketClient, {
+        projectKey: repositoryContext.projectKey,
 
-    const pullRequest =
-        await createPullRequest(
-            context.bitbucketClient,
-            {
-                projectKey:
-                    repositoryContext.projectKey,
+        repository: repositoryContext.repository,
 
-                repository:
-                    repositoryContext.repository,
+        sourceBranch: branches.sourceBranch,
 
-                sourceBranch:
-                    branches.sourceBranch,
+        targetBranch: branches.targetBranch,
 
-                targetBranch:
-                    branches.targetBranch,
+        title: options.title?.trim() || content.title,
 
-                title:
-                    options.title?.trim() ||
-                    content.title,
+        description: content.description,
 
-                description:
-                    content.description,
+        reviewers,
+    });
 
-                reviewers,
-            },
-        );
-
-
-    const url =
-        pullRequest.links.self[0]?.href;
+    const url = pullRequest.links.self[0]?.href;
 
     if (!url) {
-        throw new Error(
-            "Bitbucket did not provide the created Pull Request URL.",
-        );
+        throw new Error("Bitbucket did not provide the created Pull Request URL.");
     }
 
     console.log(url);
 }
 
+function collectReviewer(value: string, previous: string[]): string[] {
+    const reviewers = value
+        .split(",")
+        .map((reviewer) => reviewer.trim())
+        .filter(Boolean);
 
-function collectReviewer(
-    value: string,
-    previous: string[],
-): string[] {
-    const reviewers =
-        value
-            .split(",")
-            .map(
-                (reviewer) =>
-                    reviewer.trim(),
-            )
-            .filter(Boolean);
-
-    return [
-        ...previous,
-        ...reviewers,
-    ];
+    return [...previous, ...reviewers];
 }

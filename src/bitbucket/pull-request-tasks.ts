@@ -11,7 +11,10 @@ export async function getPullRequestTasks(
 ): Promise<BitbucketPullRequestTask[]> {
     const tasks: BitbucketPullRequestTask[] = [];
     for await (const page of iterateBitbucketPages(
-        client, `${getPullRequestPath(identity)}/blocker-comments`, parseTask, "Pull Request task",
+        client,
+        `${getPullRequestPath(identity)}/blocker-comments`,
+        parseTask,
+        "Pull Request task",
     )) {
         tasks.push(...page.values);
     }

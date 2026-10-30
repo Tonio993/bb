@@ -11,12 +11,7 @@
     "verbatimModuleSyntax": true,
     "rewriteRelativeImportExtensions": true,
 
-    "types": [
-      "node"
-    ]
+    "types": ["node"]
   },
-  "include": [
-    "src/**/*.ts",
-    "test/**/*.ts"
-  ]
+  "include": ["src/**/*.ts", "test/**/*.ts"]
 }

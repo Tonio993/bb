@@ -9,34 +9,59 @@ import type { BitbucketPullRequest } from "../src/bitbucket/bitbucket-types.ts";
 function fixture(t: TestContext) {
     const repository = { name: "Payments", slug: "payments", project: { key: "PROJECT" } };
     const current: BitbucketPullRequest = {
-        id: 42, version: 7, state: "OPEN", reviewers: [],
+        id: 42,
+        version: 7,
+        state: "OPEN",
+        reviewers: [],
         fromRef: { id: "refs/heads/feature/test", displayId: "feature/test", repository },
         toRef: { id: "refs/heads/develop", displayId: "develop", repository },
         links: { self: [{ href: "https://bitbucket.example/pull-requests/42" }] },
     };
     const merged = { ...current, state: "MERGED" };
     const responses: { body: unknown; status?: number }[] = [
-        { body: { values: [{ ...current, version: 1 }], size: 1, limit: 100, start: 0, isLastPage: true } },
+        {
+            body: {
+                values: [{ ...current, version: 1 }],
+                size: 1,
+                limit: 100,
+                start: 0,
+                isLastPage: true,
+            },
+        },
         { body: current },
         { body: merged },
     ];
     const requests: { method: string; path: string; body: unknown }[] = [];
-    const request = t.mock.fn<FetchImplementation>(async (input: string | URL | Request, init?: RequestInit) => {
-        const url = new URL(String(input));
-        requests.push({
-            method: init?.method ?? "GET", path: `${url.pathname}${url.search}`,
-            body: init?.body === undefined ? undefined : JSON.parse(String(init.body)),
-        });
-        const response = responses.shift();
-        assert.ok(response, "Unexpected REST request.");
-        return Response.json(response.body, { status: response.status ?? 200 });
-    });
-    const client = new BitbucketClient({ url: "https://bitbucket.example", projectKey: "PROJECT", defaultReviewers: [] }, () => "test-token", { fetch: request });
+    const request = t.mock.fn<FetchImplementation>(
+        async (input: string | URL | Request, init?: RequestInit) => {
+            const url = new URL(String(input));
+            requests.push({
+                method: init?.method ?? "GET",
+                path: `${url.pathname}${url.search}`,
+                body: init?.body === undefined ? undefined : JSON.parse(String(init.body)),
+            });
+            const response = responses.shift();
+            assert.ok(response, "Unexpected REST request.");
+            return Response.json(response.body, { status: response.status ?? 200 });
+        },
+    );
+    const client = new BitbucketClient(
+        { url: "https://bitbucket.example", projectKey: "PROJECT", defaultReviewers: [] },
+        () => "test-token",
+        { fetch: request },
+    );
     return {
-        current, merged, requests, responses,
-        run: () => mergeOpenPullRequest(client, {
-            projectKey: "PROJECT", repository: "payments", sourceBranch: "feature/test", targetBranch: "develop",
-        }),
+        current,
+        merged,
+        requests,
+        responses,
+        run: () =>
+            mergeOpenPullRequest(client, {
+                projectKey: "PROJECT",
+                repository: "payments",
+                sourceBranch: "feature/test",
+                targetBranch: "develop",
+            }),
     };
 }
 
@@ -56,7 +81,10 @@ test("the application workflow blocks merging when the current review requests c
     api.current.reviewers = [{ status: "NEEDS_WORK" }];
     await assert.rejects(api.run(), /reviewer requested changes/);
     assert.equal(api.requests.length, 2);
-    assert.equal(api.requests.some(({ method }) => method === "POST"), false);
+    assert.equal(
+        api.requests.some(({ method }) => method === "POST"),
+        false,
+    );
 });
 
 test("the application workflow propagates merge conflicts without retrying", async (t) => {

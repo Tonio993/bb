@@ -10,17 +10,10 @@ import {
 } from "node:fs";
 import { randomUUID } from "node:crypto";
 
-import {
-    dirname,
-    join,
-    basename,
-} from "node:path";
+import { dirname, join, basename } from "node:path";
 
-import {
-    homedir,
-} from "node:os";
+import { homedir } from "node:os";
 import { normalizeBitbucketUrl } from "./bitbucket-url.ts";
-
 
 export type BbConfig = {
     bitbucket: {
@@ -34,7 +27,6 @@ export type BbConfig = {
     };
 };
 
-
 type RawConfig = {
     bitbucket?: {
         url?: string;
@@ -47,7 +39,6 @@ type RawConfig = {
     };
 };
 
-
 export const CONFIG_KEYS = [
     "bitbucket.url",
     "bitbucket.projectKey",
@@ -55,9 +46,7 @@ export const CONFIG_KEYS = [
     "git.remote",
 ] as const;
 
-
-export type ConfigKey =
-    typeof CONFIG_KEYS[number];
+export type ConfigKey = (typeof CONFIG_KEYS)[number];
 
 export type ConfigSnapshot = {
     readonly "bitbucket.url": string | undefined;
@@ -69,20 +58,13 @@ export type ConfigSnapshot = {
 export class ConfigStore {
     readonly path: string;
 
-
-    constructor(
-        path: string = getGlobalConfigPath(),
-    ) {
+    constructor(path: string = getGlobalConfigPath()) {
         this.path = path;
     }
 
-
     exists(): boolean {
-        return existsSync(
-            this.path,
-        );
+        return existsSync(this.path);
     }
-
 
     loadRequired(): BbConfig {
         return requireConfiguration(this.snapshot());
@@ -92,29 +74,28 @@ export class ConfigStore {
         return toSnapshot(normalizeConfig(this.loadRaw()));
     }
 
-    get(
-        key: ConfigKey,
-    ): string | string[] | undefined {
+    get(key: ConfigKey): string | string[] | undefined {
         const config = this.loadRaw();
         switch (key) {
             case "bitbucket.url":
-                return config.bitbucket?.url === undefined ? undefined : normalizeBitbucketUrl(config.bitbucket.url);
+                return config.bitbucket?.url === undefined
+                    ? undefined
+                    : normalizeBitbucketUrl(config.bitbucket.url);
             case "bitbucket.projectKey":
-                return config.bitbucket?.projectKey === undefined ? undefined : normalizeText(config.bitbucket.projectKey, "Bitbucket project key");
+                return config.bitbucket?.projectKey === undefined
+                    ? undefined
+                    : normalizeText(config.bitbucket.projectKey, "Bitbucket project key");
             case "bitbucket.defaultReviewers":
                 return normalizeReviewers(config.bitbucket?.defaultReviewers ?? []);
             case "git.remote":
-                return config.git?.remote === undefined ? "origin" : normalizeText(config.git.remote, "Git remote");
+                return config.git?.remote === undefined
+                    ? "origin"
+                    : normalizeText(config.git.remote, "Git remote");
         }
     }
 
-
-    set(
-        key: ConfigKey,
-        value: string,
-    ): void {
-        const config =
-            this.loadRaw();
+    set(key: ConfigKey, value: string): void {
+        const config = this.loadRaw();
 
         config.bitbucket ??= {};
         config.git ??= {};
@@ -127,9 +108,7 @@ export class ConfigStore {
                 config.bitbucket.projectKey = value;
                 break;
             case "bitbucket.defaultReviewers":
-                config.bitbucket
-                    .defaultReviewers =
-                    value.split(",");
+                config.bitbucket.defaultReviewers = value.split(",");
 
                 break;
 
@@ -141,15 +120,11 @@ export class ConfigStore {
         this.saveRaw(normalizeConfig(config));
     }
 
-
-    save(
-        config: BbConfig,
-    ): void {
+    save(config: BbConfig): void {
         const normalized = normalizeConfig(config);
         requireConfiguration(toSnapshot(normalized));
         this.saveRaw(normalized);
     }
-
 
     private loadRaw(): RawConfig {
         if (!this.exists()) {
@@ -157,36 +132,21 @@ export class ConfigStore {
         }
 
         try {
-            const content =
-                readFileSync(
-                    this.path,
-                    "utf8",
-                );
+            const content = readFileSync(this.path, "utf8");
 
-            const config: unknown = JSON.parse(
-                content,
-            );
+            const config: unknown = JSON.parse(content);
 
             assertRawConfig(config);
 
             return config;
         } catch (error) {
-            const message =
-                error instanceof Error
-                    ? error.message
-                    : String(error);
+            const message = error instanceof Error ? error.message : String(error);
 
-            throw new Error(
-                `Unable to read configuration file ` +
-                `'${this.path}': ${message}`,
-            );
+            throw new Error(`Unable to read configuration file ` + `'${this.path}': ${message}`);
         }
     }
 
-
-    private saveRaw(
-        config: RawConfig,
-    ): void {
+    private saveRaw(config: RawConfig): void {
         const content = JSON.stringify(config, null, 2) + "\n";
         const directory = dirname(this.path);
         const temporaryPath = join(directory, `.${basename(this.path)}.${randomUUID()}.tmp`);
@@ -210,24 +170,14 @@ export class ConfigStore {
     }
 }
 
-
-function assertRawConfig(
-    value: unknown,
-): asserts value is RawConfig {
+function assertRawConfig(value: unknown): asserts value is RawConfig {
     if (!isObject(value)) {
-        throw new Error(
-            "Configuration must be a JSON object.",
-        );
+        throw new Error("Configuration must be a JSON object.");
     }
 
     for (const section of ["bitbucket", "git"] as const) {
-        if (
-            value[section] !== undefined &&
-            !isObject(value[section])
-        ) {
-            throw new Error(
-                `Configuration section '${section}' must be an object.`,
-            );
+        if (value[section] !== undefined && !isObject(value[section])) {
+            throw new Error(`Configuration section '${section}' must be an object.`);
         }
     }
 
@@ -246,79 +196,36 @@ function assertRawConfig(
         }
 
         if (key === "bitbucket.defaultReviewers") {
-            if (
-                !Array.isArray(entry) ||
-                !entry.every((reviewer) => typeof reviewer === "string")
-            ) {
-                throw new Error(
-                    `Configuration '${key}' must be an array of strings.`,
-                );
+            if (!Array.isArray(entry) || !entry.every((reviewer) => typeof reviewer === "string")) {
+                throw new Error(`Configuration '${key}' must be an array of strings.`);
             }
         } else if (typeof entry !== "string") {
-            throw new Error(
-                `Configuration '${key}' must be a string.`,
-            );
+            throw new Error(`Configuration '${key}' must be a string.`);
         }
     }
 }
 
-
-function isObject(
-    value: unknown,
-): value is Record<string, unknown> {
-    return (
-        typeof value === "object" &&
-        value !== null &&
-        !Array.isArray(value)
-    );
+function isObject(value: unknown): value is Record<string, unknown> {
+    return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-
-export function isConfigKey(
-    value: string,
-): value is ConfigKey {
-    return (
-        CONFIG_KEYS as readonly string[]
-    ).includes(value);
+export function isConfigKey(value: string): value is ConfigKey {
+    return (CONFIG_KEYS as readonly string[]).includes(value);
 }
-
 
 export function getGlobalConfigPath(): string {
     let configDirectory: string;
 
     if (process.platform === "win32") {
-        configDirectory =
-            process.env.APPDATA
-            || join(
-                homedir(),
-                "AppData",
-                "Roaming",
-            );
-    } else if (
-        process.platform === "darwin"
-    ) {
-        configDirectory =
-            join(
-                homedir(),
-                "Library",
-                "Application Support",
-            );
+        configDirectory = process.env.APPDATA || join(homedir(), "AppData", "Roaming");
+    } else if (process.platform === "darwin") {
+        configDirectory = join(homedir(), "Library", "Application Support");
     } else {
-        configDirectory =
-            process.env.XDG_CONFIG_HOME
-            || join(
-                homedir(),
-                ".config",
-            );
+        configDirectory = process.env.XDG_CONFIG_HOME || join(homedir(), ".config");
     }
 
-    return join(
-        configDirectory,
-        "bb",
-        "config.json",
-    );
+    return join(configDirectory, "bb", "config.json");
 }
-
 
 function normalizeConfig(value: unknown): RawConfig {
     assertRawConfig(value);
@@ -329,15 +236,21 @@ function normalizeConfig(value: unknown): RawConfig {
             config.bitbucket.url = normalizeBitbucketUrl(value.bitbucket.url);
         }
         if (value.bitbucket.projectKey !== undefined) {
-            config.bitbucket.projectKey = normalizeText(value.bitbucket.projectKey, "Bitbucket project key");
+            config.bitbucket.projectKey = normalizeText(
+                value.bitbucket.projectKey,
+                "Bitbucket project key",
+            );
         }
         if (value.bitbucket.defaultReviewers !== undefined) {
-            config.bitbucket.defaultReviewers = normalizeReviewers(value.bitbucket.defaultReviewers);
+            config.bitbucket.defaultReviewers = normalizeReviewers(
+                value.bitbucket.defaultReviewers,
+            );
         }
     }
     if (value.git) {
         config.git = { ...value.git };
-        if (value.git.remote !== undefined) config.git.remote = normalizeText(value.git.remote, "Git remote");
+        if (value.git.remote !== undefined)
+            config.git.remote = normalizeText(value.git.remote, "Git remote");
     }
     return config;
 }
@@ -372,16 +285,12 @@ function requireConfiguration(config: ConfigSnapshot): BbConfig {
     };
 }
 
-
-function missingConfigurationError(
-    key: ConfigKey,
-    example: string,
-): Error {
+function missingConfigurationError(key: ConfigKey, example: string): Error {
     return new Error(
         `Required configuration '${key}' is missing.\n\n` +
-        `Configure it with:\n` +
-        `  bb config ${key} "${example}"\n\n` +
-        `Or run:\n` +
-        `  bb config init`,
+            `Configure it with:\n` +
+            `  bb config ${key} "${example}"\n\n` +
+            `Or run:\n` +
+            `  bb config init`,
     );
 }

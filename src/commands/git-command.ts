@@ -1,24 +1,12 @@
-import type {
-    Command,
-} from "commander";
+import type { Command } from "commander";
 
-import type {
-    CommandContext,
-} from "../cli/command-context.ts";
+import type { CommandContext } from "../cli/command-context.ts";
 
-export function registerGitCommand(
-    program: Command,
-    context: CommandContext,
-): void {
+export function registerGitCommand(program: Command, context: CommandContext): void {
     program
         .command("git")
-        .description(
-            "Execute a Git command, authenticating remote operations with Bitbucket.",
-        )
-        .argument(
-            "[args...]",
-            "Arguments passed directly to Git",
-        )
+        .description("Execute a Git command, authenticating remote operations with Bitbucket.")
+        .argument("[args...]", "Arguments passed directly to Git")
         .allowUnknownOption()
         .passThroughOptions()
         .addHelpText(
@@ -33,23 +21,15 @@ Examples:
 Bitbucket authentication is added for fetch, pull, push, clone, and ls-remote.
 `,
         )
-        .action(
-            (args: string[]) => {
-                if (args.length === 0) {
-                    throw new Error(
-                        "A Git command is required.",
-                    );
-                }
+        .action((args: string[]) => {
+            if (args.length === 0) {
+                throw new Error("A Git command is required.");
+            }
 
-                const exitCode =
-                    context.gitClient.run(
-                        args,
-                    );
+            const exitCode = context.gitClient.run(args);
 
-                if (exitCode !== 0) {
-                    process.exitCode =
-                        exitCode;
-                }
-            },
-        );
+            if (exitCode !== 0) {
+                process.exitCode = exitCode;
+            }
+        });
 }

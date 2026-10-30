@@ -4,28 +4,20 @@ export type BitbucketApiErrorOptions = {
     path?: string;
 };
 
-
 export class BitbucketApiError extends Error {
     readonly statusCode: number | undefined;
     readonly method: string | undefined;
     readonly path: string | undefined;
 
-
-    constructor(
-        message: string,
-        options: BitbucketApiErrorOptions = {},
-    ) {
+    constructor(message: string, options: BitbucketApiErrorOptions = {}) {
         super(message);
 
         this.name = "BitbucketApiError";
 
-        this.statusCode =
-            options.statusCode;
+        this.statusCode = options.statusCode;
 
-        this.method =
-            options.method;
+        this.method = options.method;
 
-        this.path =
-            options.path;
+        this.path = options.path;
     }
 }

@@ -5,7 +5,10 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import type { TokenBackend } from "./token-backend.ts";
 
-type TokenCommandResult = Pick<SpawnSyncReturns<string>, "status" | "stdout" | "stderr" | "signal" | "error">;
+type TokenCommandResult = Pick<
+    SpawnSyncReturns<string>,
+    "status" | "stdout" | "stderr" | "signal" | "error"
+>;
 export type TokenCommandRunner = (
     command: string,
     args: string[],
@@ -34,17 +37,24 @@ const account = "token";
 
 export function createTokenBackend(options: TokenBackendOptions = {}): TokenBackend {
     const environment = options.environment ?? process.env;
-    const execute: TokenCommandRunner = options.execute ?? ((command, args, settings) => spawnSync(command, args, settings));
+    const execute: TokenCommandRunner =
+        options.execute ?? ((command, args, settings) => spawnSync(command, args, settings));
     switch (options.platform ?? process.platform) {
-        case "win32": return createWindowsBackend(environment, options.homeDirectory ?? homedir(), execute);
-        case "darwin": return createMacOsBackend(environment, execute);
-        case "linux": return createLinuxBackend(environment, execute);
-        default: return {
-            get name(): never { return unavailable(); },
-            read: unavailable,
-            write: unavailable,
-            delete: unavailable,
-        };
+        case "win32":
+            return createWindowsBackend(environment, options.homeDirectory ?? homedir(), execute);
+        case "darwin":
+            return createMacOsBackend(environment, execute);
+        case "linux":
+            return createLinuxBackend(environment, execute);
+        default:
+            return {
+                get name(): never {
+                    return unavailable();
+                },
+                read: unavailable,
+                write: unavailable,
+                delete: unavailable,
+            };
     }
 }
 
@@ -53,35 +63,61 @@ function unavailable(): never {
 }
 
 function commandRunner({
-    name, command, hint, environment, execute,
-    isMissing = () => false, extraEnvironment = {},
+    name,
+    command,
+    hint,
+    environment,
+    execute,
+    isMissing = () => false,
+    extraEnvironment = {},
 }: TokenCommandSettings) {
     return (args: string[], input?: string, allowMissing = false): string | undefined => {
         const childEnvironment = { ...environment, ...extraEnvironment };
         delete childEnvironment.BB_TOKEN;
-        const failure = () => new Error(`${name} token operation failed. ${hint} Alternatively, set BB_TOKEN.`);
+        const failure = () =>
+            new Error(`${name} token operation failed. ${hint} Alternatively, set BB_TOKEN.`);
         let result: TokenCommandResult;
         try {
             result = execute(command, args, {
-                encoding: "utf8", shell: false, windowsHide: true,
-                input, env: childEnvironment, timeout: 60000, maxBuffer: 65536,
+                encoding: "utf8",
+                shell: false,
+                windowsHide: true,
+                input,
+                env: childEnvironment,
+                timeout: 60000,
+                maxBuffer: 65536,
             });
         } catch {
             // Native tools may include the secret in their diagnostics; never forward them.
             throw failure();
         }
-        if (result.error || result.signal || (result.status !== 0 && !(allowMissing && isMissing(result)))) {
+        if (
+            result.error ||
+            result.signal ||
+            (result.status !== 0 && !(allowMissing && isMissing(result)))
+        ) {
             throw failure();
         }
         return result.status === 0 ? result.stdout.trim() || undefined : undefined;
     };
 }
 
-function createWindowsBackend(environment: NodeJS.ProcessEnv, homeDirectory: string, execute: TokenCommandRunner): TokenBackend {
+function createWindowsBackend(
+    environment: NodeJS.ProcessEnv,
+    homeDirectory: string,
+    execute: TokenCommandRunner,
+): TokenBackend {
     const name = "Windows DPAPI";
-    const path = join(environment.APPDATA || join(homeDirectory, "AppData", "Roaming"), "bb", "token.dat");
+    const path = join(
+        environment.APPDATA || join(homeDirectory, "AppData", "Roaming"),
+        "bb",
+        "token.dat",
+    );
     const run = commandRunner({
-        name, command: "powershell.exe", environment, execute,
+        name,
+        command: "powershell.exe",
+        environment,
+        execute,
         hint: "Ensure powershell.exe is available and use the Windows account that owns the token.",
         extraEnvironment: { BB_TOKEN_PATH: path },
     });
@@ -95,41 +131,72 @@ function createWindowsBackend(environment: NodeJS.ProcessEnv, homeDirectory: str
             mkdirSync(dirname(path), { recursive: true });
             run(["-NoProfile", "-NonInteractive", "-Command", encryptTokenScript], token);
         },
-        delete() { rmSync(path, { force: true }); },
+        delete() {
+            rmSync(path, { force: true });
+        },
     };
 }
 
-function createMacOsBackend(environment: NodeJS.ProcessEnv, execute: TokenCommandRunner): TokenBackend {
+function createMacOsBackend(
+    environment: NodeJS.ProcessEnv,
+    execute: TokenCommandRunner,
+): TokenBackend {
     const name = "macOS Keychain";
     const run = commandRunner({
-        name, command: "/usr/bin/security", environment, execute,
+        name,
+        command: "/usr/bin/security",
+        environment,
+        execute,
         hint: "Unlock the login keychain and allow access.",
         isMissing: (result) => result.status === 44,
     });
     return {
         name,
-        read() { return run(["find-generic-password", "-s", service, "-a", account, "-w"], undefined, true); },
+        read() {
+            return run(
+                ["find-generic-password", "-s", service, "-a", account, "-w"],
+                undefined,
+                true,
+            );
+        },
         write(token) {
             // security's interactive parser reads this command from stdin, not argv.
             const escaped = token.replace(/["\\]/g, "\\$&");
             run(["-i"], `add-generic-password -U -s ${service} -a ${account} -w "${escaped}"\n`);
         },
-        delete() { run(["delete-generic-password", "-s", service, "-a", account], undefined, true); },
+        delete() {
+            run(["delete-generic-password", "-s", service, "-a", account], undefined, true);
+        },
     };
 }
 
-function createLinuxBackend(environment: NodeJS.ProcessEnv, execute: TokenCommandRunner): TokenBackend {
+function createLinuxBackend(
+    environment: NodeJS.ProcessEnv,
+    execute: TokenCommandRunner,
+): TokenBackend {
     const name = "Linux Secret Service";
     const run = commandRunner({
-        name, command: "secret-tool", environment, execute,
+        name,
+        command: "secret-tool",
+        environment,
+        execute,
         hint: "Install secret-tool (libsecret) and unlock a Secret Service session.",
         isMissing: (result) => result.status === 1 && !result.stderr.trim(),
     });
     return {
         name,
-        read() { return run(["lookup", "service", service, "account", account], undefined, true); },
-        write(token) { run(["store", "--label=bb Bitbucket token", "service", service, "account", account], token); },
-        delete() { run(["clear", "service", service, "account", account], undefined, true); },
+        read() {
+            return run(["lookup", "service", service, "account", account], undefined, true);
+        },
+        write(token) {
+            run(
+                ["store", "--label=bb Bitbucket token", "service", service, "account", account],
+                token,
+            );
+        },
+        delete() {
+            run(["clear", "service", service, "account", account], undefined, true);
+        },
     };
 }
 

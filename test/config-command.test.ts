@@ -16,9 +16,10 @@ const entryPoint = fileURLToPath(new URL("../src/main.ts", import.meta.url));
 function createFixture(t: TestContext) {
     const directory = mkdtempSync(join(tmpdir(), "bb-config-cli-test-"));
     t.after(() => rmSync(directory, { recursive: true, force: true }));
-    const configDirectory = process.platform === "darwin"
-        ? join(directory, "Library", "Application Support")
-        : directory;
+    const configDirectory =
+        process.platform === "darwin"
+            ? join(directory, "Library", "Application Support")
+            : directory;
     const store = new ConfigStore(join(configDirectory, "bb", "config.json"));
     const env = {
         ...process.env,
@@ -35,7 +36,9 @@ test("config list, read, and write work without resolving application clients or
     const { store } = createFixture(t);
     const output = t.mock.method(console, "log", () => {});
     const context: CommandContext = {
-        get tokenStore(): never { throw new Error("Token storage must remain lazy."); },
+        get tokenStore(): never {
+            throw new Error("Token storage must remain lazy.");
+        },
         configStore: store,
         get config(): never {
             throw new Error("Required configuration must remain lazy.");
@@ -54,18 +57,22 @@ test("config list, read, and write work without resolving application clients or
 
     output.mock.resetCalls();
     await runCli(["config", "bitbucket.url", "https://bitbucket.company.com/"], context);
-    assert.deepEqual(output.mock.calls.map(({ arguments: args }) => args), [
-        ["bitbucket.url = https://bitbucket.company.com"],
-    ]);
+    assert.deepEqual(
+        output.mock.calls.map(({ arguments: args }) => args),
+        [["bitbucket.url = https://bitbucket.company.com"]],
+    );
 
     output.mock.resetCalls();
     await runCli(["config", "bitbucket.url"], context);
-    assert.deepEqual(output.mock.calls.map(({ arguments: args }) => args), [
-        ["https://bitbucket.company.com"],
-    ]);
+    assert.deepEqual(
+        output.mock.calls.map(({ arguments: args }) => args),
+        [["https://bitbucket.company.com"]],
+    );
 
     const snapshots = t.mock.method(store, "snapshot");
-    t.mock.method(store, "get", () => { throw new Error("Listing must use a single snapshot."); });
+    t.mock.method(store, "get", () => {
+        throw new Error("Listing must use a single snapshot.");
+    });
     for (const args of [["config"], ["config", "list"]]) {
         snapshots.mock.resetCalls();
         await runCli(args, context);
@@ -104,7 +111,12 @@ async function initialize(
             windowsHide: true,
             timeout: 15000,
         });
-        const prompts = ["Bitbucket URL", "Bitbucket project key", "Default reviewers", "Git remote"];
+        const prompts = [
+            "Bitbucket URL",
+            "Bitbucket project key",
+            "Default reviewers",
+            "Git remote",
+        ];
         let stdout = "";
         let stderr = "";
         let answerIndex = 0;
@@ -124,7 +136,9 @@ async function initialize(
                 answerIndex++;
             }
         });
-        child.stderr.setEncoding("utf8").on("data", (chunk: string) => { stderr += chunk; });
+        child.stderr.setEncoding("utf8").on("data", (chunk: string) => {
+            stderr += chunk;
+        });
         child.on("error", reject);
         child.on("close", (code) => resolve({ code, stdout, stderr }));
     });
@@ -132,7 +146,12 @@ async function initialize(
 
 test("config init works from an empty configuration and Enter preserves existing defaults", async (t) => {
     const { store, env } = createFixture(t);
-    const first = await initialize(env, [" HTTPS://BITBUCKET.company.com:443/// ", " PROJECT ", " mario, , luca, ", " upstream "]);
+    const first = await initialize(env, [
+        " HTTPS://BITBUCKET.company.com:443/// ",
+        " PROJECT ",
+        " mario, , luca, ",
+        " upstream ",
+    ]);
     assert.equal(first.code, 0, first.stderr || first.stdout);
     assert.equal(first.stderr, "");
     assert.match(first.stdout, /Configuration saved successfully/);

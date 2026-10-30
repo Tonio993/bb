@@ -1,6 +1,4 @@
-import type {
-    BitbucketApi,
-} from "./bitbucket-client.ts";
+import type { BitbucketApi } from "./bitbucket-client.ts";
 
 import type {
     BitbucketCommitMessageSuggestion,
@@ -10,10 +8,7 @@ import type {
 import { parseCommitMessageSuggestion, parsePullRequest } from "./response-parsers.ts";
 import { iterateBitbucketPages } from "./pagination.ts";
 
-import {
-    getProjectRepositories,
-} from "./repositories.ts";
-
+import { getProjectRepositories } from "./repositories.ts";
 
 export type GetOpenPullRequestOptions = {
     projectKey: string;
@@ -22,7 +17,6 @@ export type GetOpenPullRequestOptions = {
     targetBranch: string;
 };
 
-
 export type GetOpenPullRequestsOptions = {
     projectKey: string;
     sourceBranch: string;
@@ -30,83 +24,56 @@ export type GetOpenPullRequestsOptions = {
     repositoryFilter?: string;
 };
 
-
-export type BitbucketPullRequestWithRepository =
-    BitbucketPullRequest & {
-        repository: BitbucketRepository;
-    };
-
+export type BitbucketPullRequestWithRepository = BitbucketPullRequest & {
+    repository: BitbucketRepository;
+};
 
 export async function getOpenPullRequest(
     client: Pick<BitbucketApi, "get">,
     options: GetOpenPullRequestOptions,
 ): Promise<BitbucketPullRequest | undefined> {
-    const {
-        projectKey,
-        repository,
-        sourceBranch,
-        targetBranch,
-    } = options;
+    const { projectKey, repository, sourceBranch, targetBranch } = options;
 
     for await (const response of getRepositoryPullRequestPages(client, projectKey, repository)) {
-        const pullRequest =
-            response.values.find(
-                (value) =>
-                    value.fromRef.id ===
-                        `refs/heads/${sourceBranch}` &&
-                    value.toRef.id ===
-                        `refs/heads/${targetBranch}`,
-            );
+        const pullRequest = response.values.find(
+            (value) =>
+                value.fromRef.id === `refs/heads/${sourceBranch}` &&
+                value.toRef.id === `refs/heads/${targetBranch}`,
+        );
 
         if (pullRequest) {
             return pullRequest;
         }
-
     }
     return undefined;
 }
-
 
 export async function getOpenPullRequests(
     client: Pick<BitbucketApi, "get">,
     options: GetOpenPullRequestsOptions,
 ): Promise<BitbucketPullRequestWithRepository[]> {
-    const repositories =
-        await getProjectRepositories(
-            client,
-            options.projectKey,
-        );
+    const repositories = await getProjectRepositories(client, options.projectKey);
 
-    const matchingRepositories =
-        repositories.filter(
-            (repository) =>
-                matchesRepositoryFilter(
-                    repository,
-                    options.repositoryFilter,
-                ),
-        );
+    const matchingRepositories = repositories.filter((repository) =>
+        matchesRepositoryFilter(repository, options.repositoryFilter),
+    );
 
-    const pullRequests:
-        BitbucketPullRequestWithRepository[] = [];
+    const pullRequests: BitbucketPullRequestWithRepository[] = [];
 
     for (const repository of matchingRepositories) {
-        const repositoryPullRequests =
-            await getRepositoryOpenPullRequests(
-                client,
-                options.projectKey,
-                repository,
-                options.sourceBranch,
-                options.targetBranch,
-            );
-
-        pullRequests.push(
-            ...repositoryPullRequests,
+        const repositoryPullRequests = await getRepositoryOpenPullRequests(
+            client,
+            options.projectKey,
+            repository,
+            options.sourceBranch,
+            options.targetBranch,
         );
+
+        pullRequests.push(...repositoryPullRequests);
     }
 
     return pullRequests;
 }
-
 
 async function getRepositoryOpenPullRequests(
     client: Pick<BitbucketApi, "get">,
@@ -115,30 +82,25 @@ async function getRepositoryOpenPullRequests(
     sourceBranch: string,
     targetBranch: string,
 ): Promise<BitbucketPullRequestWithRepository[]> {
-    const pullRequests:
-        BitbucketPullRequestWithRepository[] = [];
+    const pullRequests: BitbucketPullRequestWithRepository[] = [];
 
-    for await (const response of getRepositoryPullRequestPages(client, projectKey, repository.slug)) {
-        const matches =
-            response.values
-                .filter(
-                    (pullRequest) =>
-                        pullRequest.fromRef.id ===
-                            `refs/heads/${sourceBranch}` &&
-                        pullRequest.toRef.id ===
-                            `refs/heads/${targetBranch}`,
-                )
-                .map(
-                    (pullRequest) => ({
-                        ...pullRequest,
-                        repository,
-                    }),
-                );
+    for await (const response of getRepositoryPullRequestPages(
+        client,
+        projectKey,
+        repository.slug,
+    )) {
+        const matches = response.values
+            .filter(
+                (pullRequest) =>
+                    pullRequest.fromRef.id === `refs/heads/${sourceBranch}` &&
+                    pullRequest.toRef.id === `refs/heads/${targetBranch}`,
+            )
+            .map((pullRequest) => ({
+                ...pullRequest,
+                repository,
+            }));
 
-        pullRequests.push(
-            ...matches,
-        );
-
+        pullRequests.push(...matches);
     }
     return pullRequests;
 }
@@ -148,7 +110,8 @@ function getRepositoryPullRequestPages(
     projectKey: string,
     repository: string,
 ) {
-    const path = `rest/api/latest/projects/${encodeURIComponent(projectKey)}` +
+    const path =
+        `rest/api/latest/projects/${encodeURIComponent(projectKey)}` +
         `/repos/${encodeURIComponent(repository)}/pull-requests?state=OPEN`;
     return iterateBitbucketPages(client, path, parsePullRequest, "Pull Request");
 }
@@ -161,36 +124,19 @@ function matchesRepositoryFilter(
         return true;
     }
 
-    const expression =
-        wildcardToRegExp(
-            filter.trim(),
-        );
+    const expression = wildcardToRegExp(filter.trim());
 
-    return (
-        expression.test(repository.name) ||
-        expression.test(repository.slug)
-    );
+    return expression.test(repository.name) || expression.test(repository.slug);
 }
 
+function wildcardToRegExp(pattern: string): RegExp {
+    const escaped = pattern
+        .replace(/[.+^${}()|[\]\\]/g, "\\$&")
+        .replace(/\*/g, ".*")
+        .replace(/\?/g, ".");
 
-function wildcardToRegExp(
-    pattern: string,
-): RegExp {
-    const escaped =
-        pattern
-            .replace(
-                /[.+^${}()|[\]\\]/g,
-                "\\$&",
-            )
-            .replace(/\*/g, ".*")
-            .replace(/\?/g, ".");
-
-    return new RegExp(
-        `^${escaped}$`,
-        "i",
-    );
+    return new RegExp(`^${escaped}$`, "i");
 }
-
 
 export type CreatePullRequestOptions = {
     projectKey: string;
@@ -202,20 +148,13 @@ export type CreatePullRequestOptions = {
     reviewers: string[];
 };
 
-
 export async function createPullRequest(
     client: Pick<BitbucketApi, "post">,
     options: CreatePullRequestOptions,
 ): Promise<BitbucketPullRequest> {
-    const encodedProjectKey =
-        encodeURIComponent(
-            options.projectKey,
-        );
+    const encodedProjectKey = encodeURIComponent(options.projectKey);
 
-    const encodedRepository =
-        encodeURIComponent(
-            options.repository,
-        );
+    const encodedRepository = encodeURIComponent(options.repository);
 
     const path =
         `rest/api/latest/projects/${encodedProjectKey}` +
@@ -223,40 +162,27 @@ export async function createPullRequest(
         `/pull-requests`;
 
     const body = {
-        title:
-            options.title,
+        title: options.title,
 
-        description:
-            options.description,
+        description: options.description,
 
         fromRef: {
-            id:
-                `refs/heads/${options.sourceBranch}`,
+            id: `refs/heads/${options.sourceBranch}`,
         },
 
         toRef: {
-            id:
-                `refs/heads/${options.targetBranch}`,
+            id: `refs/heads/${options.targetBranch}`,
         },
 
-        reviewers:
-            options.reviewers.map(
-                (reviewer) => ({
-                    user: {
-                        name:
-                            reviewer,
-                    },
-                }),
-            ),
+        reviewers: options.reviewers.map((reviewer) => ({
+            user: {
+                name: reviewer,
+            },
+        })),
     };
 
-    return client.post(
-        path,
-        body,
-        parsePullRequest,
-    );
+    return client.post(path, body, parsePullRequest);
 }
-
 
 export type PullRequestIdentity = {
     projectKey: string;
@@ -268,10 +194,7 @@ export async function getPullRequest(
     client: Pick<BitbucketApi, "get">,
     identity: PullRequestIdentity,
 ): Promise<BitbucketPullRequest> {
-    return client.get(
-        getPullRequestPath(identity),
-        parsePullRequest,
-    );
+    return client.get(getPullRequestPath(identity), parsePullRequest);
 }
 
 export type MergePullRequestBody = {
@@ -285,11 +208,7 @@ export async function mergePullRequest(
     identity: PullRequestIdentity,
     body: MergePullRequestBody,
 ): Promise<BitbucketPullRequest> {
-    return client.post(
-        `${getPullRequestPath(identity)}/merge`,
-        body,
-        parsePullRequest,
-    );
+    return client.post(`${getPullRequestPath(identity)}/merge`, body, parsePullRequest);
 }
 
 export async function getPullRequestCommitMessageSuggestion(
@@ -302,9 +221,7 @@ export async function getPullRequestCommitMessageSuggestion(
     );
 }
 
-export function getPullRequestPath(
-    identity: PullRequestIdentity,
-): string {
+export function getPullRequestPath(identity: PullRequestIdentity): string {
     if (!identity.projectKey?.trim()) {
         throw new Error("Unable to determine the Pull Request project.");
     }
@@ -317,7 +234,9 @@ export function getPullRequestPath(
         throw new Error("Unable to determine the Pull Request ID.");
     }
 
-    return `rest/api/latest/projects/${encodeURIComponent(identity.projectKey)}` +
+    return (
+        `rest/api/latest/projects/${encodeURIComponent(identity.projectKey)}` +
         `/repos/${encodeURIComponent(identity.repository)}` +
-        `/pull-requests/${identity.pullRequestId}`;
+        `/pull-requests/${identity.pullRequestId}`
+    );
 }

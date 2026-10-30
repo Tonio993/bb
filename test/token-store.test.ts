@@ -7,12 +7,23 @@ import { normalizeToken, TokenStore } from "../src/auth/token-store.ts";
 function fixture(t: TestContext, environment: NodeJS.ProcessEnv = {}) {
     let stored: string | undefined = "stored-token";
     const read = t.mock.fn(() => stored);
-    const write = t.mock.fn((token: string) => { stored = token; });
-    const remove = t.mock.fn(() => { stored = undefined; });
+    const write = t.mock.fn((token: string) => {
+        stored = token;
+    });
+    const remove = t.mock.fn(() => {
+        stored = undefined;
+    });
     const backend: TokenBackend = { name: "Test secure storage", read, write, delete: remove };
     return {
-        store: new TokenStore(backend, environment), backend, environment, read, write, remove,
-        setStored: (token: string | undefined) => { stored = token; },
+        store: new TokenStore(backend, environment),
+        backend,
+        environment,
+        read,
+        write,
+        remove,
+        setStored: (token: string | undefined) => {
+            stored = token;
+        },
     };
 }
 
@@ -96,7 +107,16 @@ test("persistent updates do not modify the environment override", (t) => {
 test("invalid tokens are rejected before writing or clearing a valid cache", (t) => {
     const { store, write, read } = fixture(t);
     store.get();
-    for (const token of ["", " ", "one\ntwo", "one\rtwo", "one\0two", "one\x85two", "one two", "x".repeat(1025)]) {
+    for (const token of [
+        "",
+        " ",
+        "one\ntwo",
+        "one\rtwo",
+        "one\0two",
+        "one\x85two",
+        "one two",
+        "x".repeat(1025),
+    ]) {
         assert.throws(() => store.set(token), /Bitbucket token/);
     }
     assert.equal(store.get(), "stored-token");
@@ -121,10 +141,15 @@ for (const operation of ["set", "delete"] as const) {
     test(`a failed ${operation} still invalidates the read cache`, (t) => {
         const { store, setStored, write, remove, read } = fixture(t);
         store.get();
-        const fail = () => { throw new Error("Storage unavailable."); };
+        const fail = () => {
+            throw new Error("Storage unavailable.");
+        };
         if (operation === "set") write.mock.mockImplementation(fail);
         else remove.mock.mockImplementation(fail);
-        assert.throws(() => operation === "set" ? store.set("new-token") : store.delete(), /Storage unavailable/);
+        assert.throws(
+            () => (operation === "set" ? store.set("new-token") : store.delete()),
+            /Storage unavailable/,
+        );
         setStored("current-token");
         assert.equal(store.get(), "current-token");
         assert.equal(read.mock.callCount(), 2);

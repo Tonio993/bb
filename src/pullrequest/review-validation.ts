@@ -1,14 +1,8 @@
-import type {
-    BitbucketPullRequestReviewer,
-} from "../bitbucket/bitbucket-types.ts";
+import type { BitbucketPullRequestReviewer } from "../bitbucket/bitbucket-types.ts";
 
-export function assertPullRequestReview(
-    reviewers: readonly BitbucketPullRequestReviewer[],
-): void {
+export function assertPullRequestReview(reviewers: readonly BitbucketPullRequestReviewer[]): void {
     if (!Array.isArray(reviewers)) {
-        throw new Error(
-            "Bitbucket did not provide the Pull Request reviewers.",
-        );
+        throw new Error("Bitbucket did not provide the Pull Request reviewers.");
     }
 
     if (reviewers.some((reviewer) => reviewer.status === "NEEDS_WORK")) {
@@ -17,12 +11,7 @@ export function assertPullRequestReview(
         );
     }
 
-    if (
-        reviewers.length > 0 &&
-        !reviewers.some((reviewer) => reviewer.status === "APPROVED")
-    ) {
-        throw new Error(
-            "Pull Request cannot be merged because no reviewer has approved it.",
-        );
+    if (reviewers.length > 0 && !reviewers.some((reviewer) => reviewer.status === "APPROVED")) {
+        throw new Error("Pull Request cannot be merged because no reviewer has approved it.");
     }
 }

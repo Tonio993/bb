@@ -3,10 +3,7 @@ export type PullRequestBranches = {
     targetBranch: string;
 };
 
-
-type CurrentBranchProvider =
-    () => string;
-
+type CurrentBranchProvider = () => string;
 
 export function resolvePullRequestBranches(
     sourceBranch: string | undefined,
@@ -14,21 +11,16 @@ export function resolvePullRequestBranches(
     currentBranchProvider: CurrentBranchProvider,
     options: Partial<PullRequestBranches> = {},
 ): PullRequestBranches {
-    if (
-        options.sourceBranch !== undefined ||
-        options.targetBranch !== undefined
-    ) {
+    if (options.sourceBranch !== undefined || options.targetBranch !== undefined) {
         if (sourceBranch !== undefined || targetBranch !== undefined) {
             throw new Error(
                 "Positional branch arguments cannot be combined " +
-                "with --source-branch or --target-branch.",
+                    "with --source-branch or --target-branch.",
             );
         }
 
         if (!options.targetBranch) {
-            throw new Error(
-                "Target branch is required.",
-            );
+            throw new Error("Target branch is required.");
         }
 
         sourceBranch = options.sourceBranch;
@@ -36,32 +28,23 @@ export function resolvePullRequestBranches(
     }
 
     if (!sourceBranch && !targetBranch) {
-        throw new Error(
-            "Target branch is required.",
-        );
+        throw new Error("Target branch is required.");
     }
 
     if (!targetBranch) {
-        targetBranch =
-            sourceBranch;
+        targetBranch = sourceBranch;
 
-        sourceBranch =
-            currentBranchProvider();
+        sourceBranch = currentBranchProvider();
     } else if (!sourceBranch) {
-        sourceBranch =
-            currentBranchProvider();
+        sourceBranch = currentBranchProvider();
     }
 
     if (!sourceBranch || !targetBranch) {
-        throw new Error(
-            "Unable to resolve Pull Request branches.",
-        );
+        throw new Error("Unable to resolve Pull Request branches.");
     }
 
     if (sourceBranch === targetBranch) {
-        throw new Error(
-            "Source and target branches cannot be the same.",
-        );
+        throw new Error("Source and target branches cannot be the same.");
     }
 
     return {

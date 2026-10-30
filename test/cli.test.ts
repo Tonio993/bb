@@ -17,10 +17,18 @@ const mainUrl = new URL("../src/main.ts", import.meta.url);
 
 function createContext(gitClient?: GitOperations): CommandContext {
     return {
-        get tokenStore(): never { throw new Error("Token storage must remain lazy."); },
-        get configStore(): never { throw new Error("Configuration must remain lazy."); },
-        get config(): never { throw new Error("Configuration must remain lazy."); },
-        get bitbucketClient(): never { throw new Error("Bitbucket must not be initialized."); },
+        get tokenStore(): never {
+            throw new Error("Token storage must remain lazy.");
+        },
+        get configStore(): never {
+            throw new Error("Configuration must remain lazy.");
+        },
+        get config(): never {
+            throw new Error("Configuration must remain lazy.");
+        },
+        get bitbucketClient(): never {
+            throw new Error("Bitbucket must not be initialized.");
+        },
         get gitClient() {
             assert.ok(gitClient, "Git must not be initialized.");
             return gitClient;
@@ -52,7 +60,21 @@ function createDirectory(t: TestContext): string {
     return directory;
 }
 
-for (const command of [[], ["config"], ["config", "list"], ["config", "init"], ["token"], ["token", "set"], ["token", "status"], ["token", "delete"], ["git"], ["get-pr-url"], ["get-pr-urls"], ["create-pr"], ["merge-pr"]]) {
+for (const command of [
+    [],
+    ["config"],
+    ["config", "list"],
+    ["config", "init"],
+    ["token"],
+    ["token", "set"],
+    ["token", "status"],
+    ["token", "delete"],
+    ["git"],
+    ["get-pr-url"],
+    ["get-pr-urls"],
+    ["create-pr"],
+    ["merge-pr"],
+]) {
     test(`help for '${command.join(" ") || "bb"}' returns normally without initializing clients`, async (t) => {
         const output = captureOutput(t);
         await runCli([...command, "--help"], createContext());
@@ -60,7 +82,14 @@ for (const command of [[], ["config"], ["config", "list"], ["config", "init"], [
         assert.ok(stdout.includes(`Usage: bb${command.length ? ` ${command.join(" ")}` : ""}`));
         assert.equal(stderr, "");
         if (command.length === 0) {
-            for (const name of ["config", "git", "get-pr-url", "get-pr-urls", "create-pr", "merge-pr"]) {
+            for (const name of [
+                "config",
+                "git",
+                "get-pr-url",
+                "get-pr-urls",
+                "create-pr",
+                "merge-pr",
+            ]) {
                 assert.ok(stdout.includes(name));
             }
         }
@@ -129,9 +158,14 @@ test("global -C and Git -C are applied independently", async (t) => {
         actionDirectory = process.cwd();
         return 0;
     });
-    await runCli(["-C", directory, "git", "-C", "nested repository", "status", "--short"], createContext(createGitStub({ run })));
+    await runCli(
+        ["-C", directory, "git", "-C", "nested repository", "status", "--short"],
+        createContext(createGitStub({ run })),
+    );
     assert.equal(actionDirectory, directory);
-    assert.deepEqual(run.mock.calls[0].arguments, [["-C", "nested repository", "status", "--short"]]);
+    assert.deepEqual(run.mock.calls[0].arguments, [
+        ["-C", "nested repository", "status", "--short"],
+    ]);
     assert.equal(process.cwd(), originalDirectory);
 });
 
@@ -142,7 +176,10 @@ test("Git -C alone is forwarded without changing the bb process directory", asyn
         actionDirectory = process.cwd();
         return 0;
     });
-    await runCli(["git", "-C", "repository with spaces", "status"], createContext(createGitStub({ run })));
+    await runCli(
+        ["git", "-C", "repository with spaces", "status"],
+        createContext(createGitStub({ run })),
+    );
     assert.equal(actionDirectory, originalDirectory);
     assert.deepEqual(run.mock.calls[0].arguments, [["-C", "repository with spaces", "status"]]);
 });
@@ -153,17 +190,29 @@ for (const target of ["missing", "file", "empty"]) {
         const path = target === "empty" ? "" : join(directory, target);
         if (target === "file") writeFileSync(path, "not a directory", "utf8");
         const originalDirectory = process.cwd();
-        await assert.rejects(runCli(["-C", path, "git", "status"], createContext()), /Unable to use directory/);
+        await assert.rejects(
+            runCli(["-C", path, "git", "status"], createContext()),
+            /Unable to use directory/,
+        );
         assert.equal(process.cwd(), originalDirectory);
     });
 }
 
 test("the executable prints parser and application errors once with a nonzero exit code", (t) => {
     const directory = createDirectory(t);
-    const env = { ...process.env, APPDATA: directory, XDG_CONFIG_HOME: directory, HOME: directory, USERPROFILE: directory };
+    const env = {
+        ...process.env,
+        APPDATA: directory,
+        XDG_CONFIG_HOME: directory,
+        HOME: directory,
+        USERPROFILE: directory,
+    };
     for (const args of [["unknown-command"], ["get-pr-url", "develop", "develop"]]) {
         const result = spawnSync(process.execPath, [fileURLToPath(mainUrl), ...args], {
-            env, encoding: "utf8", windowsHide: true, timeout: 15000,
+            env,
+            encoding: "utf8",
+            windowsHide: true,
+            timeout: 15000,
         });
         assert.ifError(result.error);
         assert.equal(result.status, 1);
@@ -183,8 +232,16 @@ test("the executable preserves the exit code returned by the Git pass-through", 
         await import(${JSON.stringify(mainUrl.href)});
     `;
     const result = spawnSync(process.execPath, ["--input-type=module", "--eval", script], {
-        env: { ...process.env, APPDATA: directory, XDG_CONFIG_HOME: directory, HOME: directory, USERPROFILE: directory },
-        encoding: "utf8", windowsHide: true, timeout: 15000,
+        env: {
+            ...process.env,
+            APPDATA: directory,
+            XDG_CONFIG_HOME: directory,
+            HOME: directory,
+            USERPROFILE: directory,
+        },
+        encoding: "utf8",
+        windowsHide: true,
+        timeout: 15000,
     });
     assert.ifError(result.error);
     assert.equal(result.status, 37, result.stderr);

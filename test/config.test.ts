@@ -1,5 +1,12 @@
 import assert from "node:assert/strict";
-import fs, { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import fs, {
+    existsSync,
+    mkdtempSync,
+    readFileSync,
+    readdirSync,
+    rmSync,
+    writeFileSync,
+} from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -31,13 +38,18 @@ test("missing configuration can be read without creating a file", (t) => {
 test("required configuration errors explain how to configure each missing key", (t) => {
     const store = createStore(t);
 
-    assert.throws(() => store.loadRequired(), (error: unknown) => {
-        assert.ok(error instanceof Error);
-        assert.match(error.message, /Required configuration 'bitbucket.url' is missing/);
-        assert.ok(error.message.includes('bb config bitbucket.url "https://bitbucket.company.com"'));
-        assert.ok(error.message.includes("bb config init"));
-        return true;
-    });
+    assert.throws(
+        () => store.loadRequired(),
+        (error: unknown) => {
+            assert.ok(error instanceof Error);
+            assert.match(error.message, /Required configuration 'bitbucket.url' is missing/);
+            assert.ok(
+                error.message.includes('bb config bitbucket.url "https://bitbucket.company.com"'),
+            );
+            assert.ok(error.message.includes("bb config init"));
+            return true;
+        },
+    );
 
     store.set("bitbucket.url", "https://bitbucket.company.com");
     assert.throws(() => store.loadRequired(), /bb config bitbucket.projectKey "PROJECT"/);
@@ -106,11 +118,14 @@ test("invalid JSON reports the configuration path", (t) => {
     const store = createStore(t);
     writeFileSync(store.path, "{", "utf8");
 
-    assert.throws(() => store.get("git.remote"), (error: unknown) => {
-        assert.ok(error instanceof Error);
-        assert.ok(error.message.includes(`Unable to read configuration file '${store.path}':`));
-        return true;
-    });
+    assert.throws(
+        () => store.get("git.remote"),
+        (error: unknown) => {
+            assert.ok(error instanceof Error);
+            assert.ok(error.message.includes(`Unable to read configuration file '${store.path}':`));
+            return true;
+        },
+    );
 });
 
 const invalidConfigurations: [unknown, string][] = [
@@ -123,8 +138,14 @@ const invalidConfigurations: [unknown, string][] = [
     [{ bitbucket: { url: 123 } }, "Configuration 'bitbucket.url' must be a string."],
     [{ bitbucket: { projectKey: null } }, "Configuration 'bitbucket.projectKey' must be a string."],
     [{ git: { remote: false } }, "Configuration 'git.remote' must be a string."],
-    [{ bitbucket: { defaultReviewers: "mario" } }, "Configuration 'bitbucket.defaultReviewers' must be an array of strings."],
-    [{ bitbucket: { defaultReviewers: ["mario", null] } }, "Configuration 'bitbucket.defaultReviewers' must be an array of strings."],
+    [
+        { bitbucket: { defaultReviewers: "mario" } },
+        "Configuration 'bitbucket.defaultReviewers' must be an array of strings.",
+    ],
+    [
+        { bitbucket: { defaultReviewers: ["mario", null] } },
+        "Configuration 'bitbucket.defaultReviewers' must be an array of strings.",
+    ],
 ];
 
 for (const [config, message] of invalidConfigurations) {
@@ -149,10 +170,14 @@ for (const [config, message] of invalidConfigurations) {
 
 test("updating a known setting preserves other configuration fields", (t) => {
     const store = createStore(t);
-    writeFileSync(store.path, JSON.stringify({
-        bitbucket: { projectKey: "PROJECT", futureSetting: true },
-        futureSection: { enabled: true },
-    }), "utf8");
+    writeFileSync(
+        store.path,
+        JSON.stringify({
+            bitbucket: { projectKey: "PROJECT", futureSetting: true },
+            futureSection: { enabled: true },
+        }),
+        "utf8",
+    );
 
     store.set("git.remote", "upstream");
     assert.deepEqual(JSON.parse(readFileSync(store.path, "utf8")), {
@@ -162,31 +187,43 @@ test("updating a known setting preserves other configuration fields", (t) => {
     });
 });
 
-test("the global directory honors the platform configuration environment variable", {
-    skip: process.platform === "darwin",
-}, (t) => {
-    const directory = join(homedir(), "bb-test-config-location");
-    const variable = process.platform === "win32" ? "APPDATA" : "XDG_CONFIG_HOME";
-    const original = process.env[variable];
-    t.after(() => {
-        if (original === undefined) {
-            delete process.env[variable];
-        } else {
-            process.env[variable] = original;
-        }
-    });
+test(
+    "the global directory honors the platform configuration environment variable",
+    {
+        skip: process.platform === "darwin",
+    },
+    (t) => {
+        const directory = join(homedir(), "bb-test-config-location");
+        const variable = process.platform === "win32" ? "APPDATA" : "XDG_CONFIG_HOME";
+        const original = process.env[variable];
+        t.after(() => {
+            if (original === undefined) {
+                delete process.env[variable];
+            } else {
+                process.env[variable] = original;
+            }
+        });
 
-    process.env[variable] = directory;
-    assert.equal(getGlobalConfigPath(), join(directory, "bb", "config.json"));
-    assert.equal(new ConfigStore().path, join(directory, "bb", "config.json"));
-});
+        process.env[variable] = directory;
+        assert.equal(getGlobalConfigPath(), join(directory, "bb", "config.json"));
+        assert.equal(new ConfigStore().path, join(directory, "bb", "config.json"));
+    },
+);
 
 const normalizedConfig: BbConfig = {
-    bitbucket: { url: "https://bitbucket.company.com/bitbucket", projectKey: "PROJECT", defaultReviewers: ["mario", "luca"] },
+    bitbucket: {
+        url: "https://bitbucket.company.com/bitbucket",
+        projectKey: "PROJECT",
+        defaultReviewers: ["mario", "luca"],
+    },
     git: { remote: "upstream" },
 };
 const unnormalizedConfig = {
-    bitbucket: { url: " HTTPS://BITBUCKET.company.com:443/bitbucket/// ", projectKey: " PROJECT ", defaultReviewers: [" mario ", " ", "luca"] },
+    bitbucket: {
+        url: " HTTPS://BITBUCKET.company.com:443/bitbucket/// ",
+        projectKey: " PROJECT ",
+        defaultReviewers: [" mario ", " ", "luca"],
+    },
     git: { remote: " upstream " },
 };
 
@@ -216,17 +253,26 @@ test("snapshots use one read and remain independent from subsequent configuratio
     store.save(normalizedConfig);
     const nativeRead = fs.readFileSync;
     let reads = 0;
-    const read = t.mock.method(fs, "readFileSync", (...args: Parameters<typeof fs.readFileSync>) => {
-        if (args[0] === store.path) reads++;
-        return nativeRead(...args);
-    });
+    const read = t.mock.method(
+        fs,
+        "readFileSync",
+        (...args: Parameters<typeof fs.readFileSync>) => {
+            if (args[0] === store.path) reads++;
+            return nativeRead(...args);
+        },
+    );
     syncBuiltinESMExports();
-    t.after(() => { read.mock.restore(); syncBuiltinESMExports(); });
+    t.after(() => {
+        read.mock.restore();
+        syncBuiltinESMExports();
+    });
     const snapshot = store.snapshot();
     assert.equal(reads, 1);
     assert.deepEqual(snapshot, {
-        "bitbucket.url": normalizedConfig.bitbucket.url, "bitbucket.projectKey": "PROJECT",
-        "bitbucket.defaultReviewers": ["mario", "luca"], "git.remote": "upstream",
+        "bitbucket.url": normalizedConfig.bitbucket.url,
+        "bitbucket.projectKey": "PROJECT",
+        "bitbucket.defaultReviewers": ["mario", "luca"],
+        "git.remote": "upstream",
     });
     store.set("git.remote", "origin");
     assert.equal(snapshot["git.remote"], "upstream");
@@ -234,9 +280,16 @@ test("snapshots use one read and remain independent from subsequent configuratio
 });
 
 for (const url of [
-    "not a URL", "ftp://bitbucket.company.com", "https:/bitbucket.company.com", "https://user:private-password@bitbucket.company.com",
-    "https://*.company.com", "https://bitbucket.company.com?query=1", "https://bitbucket.company.com#fragment",
-    "https://bitbucket.company.com/?", "https://bitbucket.company.com/#", "https://bitbucket.company.com/bit bucket",
+    "not a URL",
+    "ftp://bitbucket.company.com",
+    "https:/bitbucket.company.com",
+    "https://user:private-password@bitbucket.company.com",
+    "https://*.company.com",
+    "https://bitbucket.company.com?query=1",
+    "https://bitbucket.company.com#fragment",
+    "https://bitbucket.company.com/?",
+    "https://bitbucket.company.com/#",
+    "https://bitbucket.company.com/bit bucket",
 ]) {
     test(`all configuration entry points reject unsafe or invalid URL ${JSON.stringify(url)}`, (t) => {
         const store = createStore(t);
@@ -253,7 +306,11 @@ for (const url of [
             assert.equal(readFileSync(store.path, "utf8"), original);
         }
         writeFileSync(store.path, JSON.stringify(invalid));
-        for (const read of [() => store.get("bitbucket.url"), () => store.snapshot(), () => store.loadRequired()]) {
+        for (const read of [
+            () => store.get("bitbucket.url"),
+            () => store.snapshot(),
+            () => store.loadRequired(),
+        ]) {
             assert.throws(read, /Invalid Bitbucket URL/);
         }
         assert.equal(store.get("git.remote"), "upstream");
@@ -266,7 +323,12 @@ test("save rejects missing required keys and runtime schema errors before changi
     const store = createStore(t);
     store.save(normalizedConfig);
     const original = readFileSync(store.path, "utf8");
-    for (const value of [{}, { bitbucket: { url: normalizedConfig.bitbucket.url } }, { bitbucket: { url: 42 } }, { git: { remote: " " } }]) {
+    for (const value of [
+        {},
+        { bitbucket: { url: normalizedConfig.bitbucket.url } },
+        { bitbucket: { url: 42 } },
+        { git: { remote: " " } },
+    ]) {
         assert.throws(() => store.save(value as unknown as BbConfig));
         assert.equal(readFileSync(store.path, "utf8"), original);
         assert.deepEqual(readdirSync(dirname(store.path)), ["config.json"]);
@@ -274,8 +336,17 @@ test("save rejects missing required keys and runtime schema errors before changi
 });
 
 const emptySettings: { key: ConfigKey; config: BbConfig }[] = [
-    { key: "bitbucket.url", config: { ...normalizedConfig, bitbucket: { ...normalizedConfig.bitbucket, url: " " } } },
-    { key: "bitbucket.projectKey", config: { ...normalizedConfig, bitbucket: { ...normalizedConfig.bitbucket, projectKey: " " } } },
+    {
+        key: "bitbucket.url",
+        config: { ...normalizedConfig, bitbucket: { ...normalizedConfig.bitbucket, url: " " } },
+    },
+    {
+        key: "bitbucket.projectKey",
+        config: {
+            ...normalizedConfig,
+            bitbucket: { ...normalizedConfig.bitbucket, projectKey: " " },
+        },
+    },
     { key: "git.remote", config: { ...normalizedConfig, git: { remote: " " } } },
 ];
 for (const { key, config } of emptySettings) {
@@ -286,7 +357,11 @@ for (const { key, config } of emptySettings) {
         assert.throws(() => store.save(config), /cannot be empty/);
         assert.equal(readFileSync(store.path, "utf8"), original);
         writeFileSync(store.path, JSON.stringify(config));
-        for (const read of [() => store.get(key), () => store.snapshot(), () => store.loadRequired()]) {
+        for (const read of [
+            () => store.get(key),
+            () => store.snapshot(),
+            () => store.loadRequired(),
+        ]) {
             assert.throws(read, /cannot be empty/);
         }
     });
@@ -297,13 +372,23 @@ test("failed writes leave the old configuration intact and remove partial tempor
     store.save(normalizedConfig);
     const original = readFileSync(store.path, "utf8");
     const nativeWrite = fs.writeFileSync;
-    const write = t.mock.method(fs, "writeFileSync", (...args: Parameters<typeof fs.writeFileSync>) => {
-        nativeWrite(args[0], "partial", args[2]);
-        throw new Error("Simulated write failure.");
-    });
+    const write = t.mock.method(
+        fs,
+        "writeFileSync",
+        (...args: Parameters<typeof fs.writeFileSync>) => {
+            nativeWrite(args[0], "partial", args[2]);
+            throw new Error("Simulated write failure.");
+        },
+    );
     syncBuiltinESMExports();
-    t.after(() => { write.mock.restore(); syncBuiltinESMExports(); });
-    assert.throws(() => store.set("git.remote", "origin"), /Unable to write configuration file.*Simulated write failure/);
+    t.after(() => {
+        write.mock.restore();
+        syncBuiltinESMExports();
+    });
+    assert.throws(
+        () => store.set("git.remote", "origin"),
+        /Unable to write configuration file.*Simulated write failure/,
+    );
     assert.equal(readFileSync(store.path, "utf8"), original);
     assert.deepEqual(readdirSync(dirname(store.path)), ["config.json"]);
 });
@@ -312,10 +397,18 @@ test("failed replacement leaves the old configuration intact and removes the com
     const store = createStore(t);
     store.save(normalizedConfig);
     const original = readFileSync(store.path, "utf8");
-    const rename = t.mock.method(fs, "renameSync", () => { throw new Error("Simulated replacement failure."); });
+    const rename = t.mock.method(fs, "renameSync", () => {
+        throw new Error("Simulated replacement failure.");
+    });
     syncBuiltinESMExports();
-    t.after(() => { rename.mock.restore(); syncBuiltinESMExports(); });
-    assert.throws(() => store.set("git.remote", "origin"), /Unable to write configuration file.*Simulated replacement failure/);
+    t.after(() => {
+        rename.mock.restore();
+        syncBuiltinESMExports();
+    });
+    assert.throws(
+        () => store.set("git.remote", "origin"),
+        /Unable to write configuration file.*Simulated replacement failure/,
+    );
     assert.equal(readFileSync(store.path, "utf8"), original);
     assert.deepEqual(readdirSync(dirname(store.path)), ["config.json"]);
 });
