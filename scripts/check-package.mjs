@@ -12,7 +12,7 @@ mkdirSync(temporaryRoot, { recursive: true });
 const fixture = mkdtempSync(join(temporaryRoot, "bb-package-"));
 assert.equal(dirname(resolve(fixture)), temporaryRoot);
 
-function run(command, args, options = {}) {
+function run(command, args, options = {}, expectedStatus = 0) {
     const result = spawnSync(command, args, {
         cwd: fixture,
         encoding: "utf8",
@@ -21,7 +21,11 @@ function run(command, args, options = {}) {
         ...options,
     });
     assert.ifError(result.error);
-    assert.equal(result.status, 0, `${command} failed:\n${result.stdout}\n${result.stderr}`);
+    assert.equal(
+        result.status,
+        expectedStatus,
+        `${command} failed:\n${result.stdout}\n${result.stderr}`,
+    );
     return result.stdout;
 }
 
@@ -120,8 +124,28 @@ try {
             : run(shim, ["--help"], { env: environment });
     assert.match(help, /Usage: bb/);
     assert.match(help, /merge-pr/);
+    assert.match(help, /doctor/);
 
     const main = join(installedPackage, "dist", "main.js");
+    const doctorHelp = run(process.execPath, [main, "doctor", "--help"], { env: environment });
+    assert.match(doctorHelp, /--check-token/);
+    assert.match(doctorHelp, /--remote/);
+    const doctor = run(process.execPath, [main, "doctor", "--check-token"], {
+        env: { ...environment, BB_TOKEN: "package-smoke-token" },
+    });
+    assert.match(doctor, /\[OK\] Token readability:/);
+    assert.match(doctor, /Summary: \d+ OK, \d+ WARN, 0 FAIL, \d+ SKIP/);
+    assert.doesNotMatch(doctor, /package-smoke-token/);
+    const invalidToken = run(
+        process.execPath,
+        [main, "doctor", "--check-token"],
+        {
+            env: { ...environment, BB_TOKEN: "" },
+        },
+        1,
+    );
+    assert.match(invalidToken, /\[FAIL\] Token readability:/);
+    assert.match(invalidToken, /Summary: \d+ OK, \d+ WARN, 1 FAIL, \d+ SKIP/);
     assert.match(
         run(process.execPath, [main, "merge-pr", "--help"], { env: environment }),
         /--complete-tasks/,

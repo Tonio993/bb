@@ -1,10 +1,12 @@
 export type BitbucketApiErrorOptions = {
+    kind?: "http" | "timeout" | "connection" | "response";
     statusCode?: number;
     method?: string;
     path?: string;
 };
 
 export class BitbucketApiError extends Error {
+    readonly kind: BitbucketApiErrorOptions["kind"];
     readonly statusCode: number | undefined;
     readonly method: string | undefined;
     readonly path: string | undefined;
@@ -13,6 +15,7 @@ export class BitbucketApiError extends Error {
         super(message);
 
         this.name = "BitbucketApiError";
+        this.kind = options.kind;
 
         this.statusCode = options.statusCode;
 

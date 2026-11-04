@@ -44,6 +44,9 @@ function setEnvironment(t: TestContext, values: Record<string, string | undefine
 
 function createContext(gitClient: GitClient): CommandContext {
     return {
+        get doctor(): never {
+            throw new Error("Doctor must remain lazy.");
+        },
         get tokenStore(): never {
             throw new Error("Token storage is already injected in Git.");
         },
@@ -59,6 +62,20 @@ function createContext(gitClient: GitClient): CommandContext {
         },
     };
 }
+
+test("Git version is bounded and does not request configuration or credentials", (t) => {
+    const execute = mockGit(t, { stdout: "git version 2.50.0\n" });
+    const unexpected = (): never => {
+        throw new Error("Unexpected credential or configuration access.");
+    };
+    const client = new GitClient("origin", unexpected, unexpected, { execute });
+    assert.equal(client.version(), "git version 2.50.0");
+    const [command, args, options] = execute.mock.calls[0].arguments;
+    assert.equal(command, "git");
+    assert.deepEqual(args, ["--version"]);
+    assert.equal(options.timeout, 10000);
+    assert.equal(options.shell, false);
+});
 
 test("Git clients keep their injected process runners isolated", (t) => {
     const first = mockGit(t, { stdout: "feature/first\n" });

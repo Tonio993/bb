@@ -23,11 +23,9 @@ const page = { values: [repository], size: 1, limit: 100, start: 0, isLastPage: 
 
 function api(t: TestContext, body: unknown, status = 200) {
     const request = t.mock.fn<FetchImplementation>(async () => Response.json(body, { status }));
-    const client = new BitbucketClient(
-        { url: "https://bitbucket.example", projectKey: "PROJECT", defaultReviewers: [] },
-        () => "test-token",
-        { fetch: request },
-    );
+    const client = new BitbucketClient("https://bitbucket.example", () => "test-token", {
+        fetch: request,
+    });
     return { client, request };
 }
 

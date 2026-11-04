@@ -11,6 +11,9 @@ export function createWindowsBackend(
     execute: TokenCommandRunner,
 ): TokenBackend {
     const name = "Windows DPAPI";
+    const tool = "powershell.exe";
+    const hint =
+        "Ensure powershell.exe is available and use the Windows account that owns the token.";
     const path = join(
         environment.APPDATA || join(homeDirectory, "AppData", "Roaming"),
         "bb",
@@ -18,7 +21,7 @@ export function createWindowsBackend(
     );
     const run = commandRunner({
         name,
-        command: "powershell.exe",
+        command: tool,
         environment,
         execute: (command, args, options) => {
             // Windows PowerShell must not inherit incompatible PowerShell 7 module paths.
@@ -28,11 +31,13 @@ export function createWindowsBackend(
             }
             return execute(command, args, { ...options, env: childEnvironment });
         },
-        hint: "Ensure powershell.exe is available and use the Windows account that owns the token.",
+        hint,
         extraEnvironment: { BB_TOKEN_PATH: path },
     });
     return {
         name,
+        tool,
+        hint,
         read() {
             if (!existsSync(path)) return undefined;
             return run(["-NoProfile", "-NonInteractive", "-Command", decryptTokenScript]);

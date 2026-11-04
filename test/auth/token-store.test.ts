@@ -30,7 +30,7 @@ function fixture(t: TestContext, environment: NodeJS.ProcessEnv = {}) {
 test("environment credentials bypass the backend for both reads and source inspection", (t) => {
     const { store, read } = fixture(t, { BB_TOKEN: " environment-token " });
     assert.equal(store.get(), "environment-token");
-    assert.equal(store.source(), "BB_TOKEN");
+    assert.equal(store.inspectCredential(), "BB_TOKEN");
     assert.equal(read.mock.callCount(), 0);
 });
 
@@ -51,24 +51,24 @@ test("an environment override takes priority even after a stored token has been 
     store.get();
     environment.BB_TOKEN = "new-override";
     assert.equal(store.get(), "new-override");
-    assert.equal(store.source(), "BB_TOKEN");
+    assert.equal(store.inspectCredential(), "BB_TOKEN");
     environment.BB_TOKEN = " ";
     assert.throws(() => store.get(), /cannot be empty/);
-    assert.throws(() => store.source(), /cannot be empty/);
+    assert.throws(() => store.inspectCredential(), /cannot be empty/);
     assert.equal(read.mock.callCount(), 1);
 });
 
 test("an empty environment override never falls back to stored credentials", (t) => {
     const { store, read } = fixture(t, { BB_TOKEN: "" });
     assert.throws(() => store.get(), /cannot be empty/);
-    assert.throws(() => store.source(), /cannot be empty/);
+    assert.throws(() => store.inspectCredential(), /cannot be empty/);
     assert.equal(read.mock.callCount(), 0);
 });
 
 test("missing credentials explain how to configure a token", (t) => {
     const { store, setStored } = fixture(t);
     setStored(undefined);
-    assert.equal(store.source(), undefined);
+    assert.equal(store.inspectCredential(), undefined);
     assert.throws(() => store.get(), /bb token set.*BB_TOKEN/);
 });
 
@@ -76,11 +76,23 @@ test("source inspection validates storage without populating or replacing the re
     const { store, read, setStored } = fixture(t);
     assert.equal(store.get(), "stored-token");
     setStored("replacement-token");
-    assert.equal(store.source(), "Test secure storage");
+    assert.equal(store.inspectCredential(), "Test secure storage");
     assert.equal(store.get(), "stored-token");
     assert.equal(read.mock.callCount(), 2);
     store.clearCache();
     assert.equal(store.get(), "replacement-token");
+});
+
+test("remote preflight can cache a validated source and reuse it without rereading storage", (t) => {
+    const { store, read, setStored } = fixture(t);
+    assert.equal(store.inspectCredential({ cacheForUse: true }), "Test secure storage");
+    assert.equal(store.get(), "stored-token");
+    assert.equal(store.inspectCredential({ cacheForUse: true }), "Test secure storage");
+    assert.equal(read.mock.callCount(), 1);
+    setStored("replacement-token");
+    store.clearCache();
+    assert.equal(store.get(), "replacement-token");
+    assert.equal(read.mock.callCount(), 2);
 });
 
 test("setting and deleting credentials invalidate a previously cached token", (t) => {
@@ -131,7 +143,7 @@ test("invalid backend credentials are validated and never cached", (t) => {
     const { store, setStored, read } = fixture(t);
     setStored("invalid token");
     assert.throws(() => store.get(), /whitespace/);
-    assert.throws(() => store.source(), /whitespace/);
+    assert.throws(() => store.inspectCredential(), /whitespace/);
     setStored("fixed-token");
     assert.equal(store.get(), "fixed-token");
     assert.equal(read.mock.callCount(), 3);

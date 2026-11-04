@@ -159,12 +159,15 @@ function createFixture(t: TestContext) {
     const git = createGitStub({ currentBranch, currentRepository, run: runGit, fetch: fetchGit });
     const output = t.mock.method(console, "log", () => {});
     const context: CommandContext = {
+        get doctor(): never {
+            throw new Error("Doctor must remain lazy.");
+        },
         get tokenStore(): never {
             throw new Error("Token storage is already injected in the clients.");
         },
         config,
         gitClient: git,
-        bitbucketClient: new BitbucketClient(config.bitbucket, () => "test-token", {
+        bitbucketClient: new BitbucketClient(config.bitbucket.url, () => "test-token", {
             fetch: request,
         }),
         get configStore(): never {

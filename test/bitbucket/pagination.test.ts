@@ -25,11 +25,9 @@ function api(t: TestContext, responses: { body: unknown; status?: number }[]) {
         assert.ok(response, "Unexpected page request.");
         return Response.json(response.body, { status: response.status ?? 200 });
     });
-    const client = new BitbucketClient(
-        { url: "https://bitbucket.example/bitbucket", projectKey: "PROJECT", defaultReviewers: [] },
-        () => "test-token",
-        { fetch: request },
-    );
+    const client = new BitbucketClient("https://bitbucket.example/bitbucket", () => "test-token", {
+        fetch: request,
+    });
     const parseNumber = (value: unknown): number => {
         if (typeof value !== "number") throw new Error("Expected a number.");
         return value;

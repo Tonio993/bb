@@ -9,7 +9,8 @@ Questo documento descrive responsabilità e invarianti dell'implementazione Node
 | `src/main.ts`       | Composition root: store, client, contesto lazy, CLI, errore finale e cleanup.   |
 | `src/cli/`          | Parsing Commander, directory temporanea globale, contratti e input del token.   |
 | `src/cli/commands/` | Registrar dei comandi, opzioni, risoluzione degli input e output.               |
-| `src/application/`  | Orchestrazione del merge, senza URL REST, parsing HTTP, Commander o Git.        |
+| `src/application/`  | Orchestrazione del merge e della diagnostica tramite dipendenze esplicite.      |
+| `src/diagnostics/`  | Lettura della versione npm e ricerca locale degli eseguibili dei backend.       |
 | `src/bitbucket/`    | Trasporto HTTP, parser delle response, paginazione e operazioni REST.           |
 | `src/git/`          | Esecuzione Git, autenticazione selettiva ed errori strutturati.                 |
 | `src/auth/`         | Store del token, selezione e implementazioni dei backend sicuri.                |
@@ -25,10 +26,12 @@ src/
   cli/
     cli.ts
     command-context.ts
+    doctor-report.ts
     token-input.ts
     commands/
       index.ts
       config-command.ts
+      doctor-command.ts
       token-command.ts
       git-command.ts
       get-pr-url-command.ts
@@ -36,7 +39,16 @@ src/
       create-pr-command.ts
       merge-pr-command.ts
   application/
+    doctor/
+      run-doctor.ts
+      local-diagnostics.ts
+      credential-diagnostics.ts
+      remote-diagnostics.ts
+      doctor-types.ts
     merge-pull-request.ts
+  diagnostics/
+    executable.ts
+    npm-version.ts
   auth/
     token-store.ts
     token-backend.ts
@@ -56,6 +68,7 @@ src/
     git-client.ts
     git-command-error.ts
   bitbucket/
+    authentication.ts
     bitbucket-types.ts
     bitbucket-client.ts
     bitbucket-api-error.ts
@@ -79,6 +92,7 @@ test/
   cli/
     commands/
   application/
+    doctor/
   auth/
   config/
   git/
@@ -100,7 +114,7 @@ Le response Bitbucket restano in [bitbucket-types.ts](../src/bitbucket/bitbucket
 
 I tipi privati e gli helper usati da un solo modulo restano accanto all'implementazione. Le funzioni di dominio rimangono funzioni pure; non sono introdotte classi di servizio o directory generiche `types`, `utils` o `services`. Gli import puntano al modulo che possiede la definizione: non mantenere re-export dei vecchi percorsi o barrel generici. `cli/commands/index.ts` è il punto di registrazione dei comandi.
 
-I test seguono le aree di `src/`, con gli helper condivisi in `test/helpers/`. I test puri di branch, reviewer e contenuto PR sono separati per argomento. Per eseguire un'area usare, ad esempio, `node --test "test/config/*.test.ts"`; per i comandi usare `node --test "test/cli/commands/*.test.ts"`. `npm test` seleziona ricorsivamente solo i file `*.test.ts`, includendo tutte le aree ed escludendo gli helper.
+I test seguono le aree di `src/`, con gli helper condivisi in `test/helpers/`. La diagnostica applicativa è raccolta in `test/application/doctor/`; parsing, output ed exit code del comando restano in `test/cli/commands/doctor-command.test.ts`. Le prove del composition root sono separate in `test/cli/doctor-bootstrap.test.ts` e riutilizzano la configurazione temporanea isolata di `test/helpers/doctor-fixture.ts`. Le sostituzioni delle funzioni native sono limitate ai subprocessi di bootstrap; classificazione degli errori e prerequisiti sono testati direttamente tramite funzioni e dipendenze esplicite. I test puri di branch, reviewer e contenuto PR sono separati per argomento. Per eseguire un'area usare, ad esempio, `node --test "test/config/*.test.ts"`; per i comandi usare `node --test "test/cli/commands/*.test.ts"`. `npm test` seleziona ricorsivamente solo i file `*.test.ts`, includendo tutte le aree ed escludendo gli helper.
 
 ## Composizione e CLI
 
@@ -111,6 +125,30 @@ Ogni comando si registra con `register...Command(program, context)`. L'elenco de
 `-C` / `--path` prima del comando cambia temporaneamente la directory. Il cleanup la ripristina anche dopo help o errori. Dopo `bb git`, gli argomenti appartengono invece a Git: `bb git -C ...` deve inoltrare l'opzione senza interpretarla.
 
 L'help esplicito termina con successo; parsing e errori applicativi producono una diagnostica su stderr ed exit code 1. Il pass-through propaga l'exit code Git. Help, configurazione e operazioni locali non devono inizializzare servizi Bitbucket o recuperare token.
+
+## Diagnostica locale
+
+`doctor` riceve tramite `CommandContext.doctor` una funzione asincrona composta in `main.ts`. `application/doctor/run-doctor.ts` coordina i controlli; `application/doctor/local-diagnostics.ts` verifica versione Node, provider delle versioni npm/Git e store di configurazione. `CommandContext.doctor` restituisce sempre una `Promise<DoctorCheck[]>`; gli stub dei test rispettano lo stesso contratto. I moduli applicativi restituiscono risultati senza stampare né impostare exit code. Il registrar attende i risultati e si occupa di output ed exit code: `1` con almeno un `FAIL`, altrimenti `0`. File assente, chiavi obbligatorie mancanti o strumenti non adatti all'installazione Git producono `WARN`; runtime incompatibile, strumenti non eseguibili e configurazione non valida producono `FAIL`.
+
+`application/doctor/doctor-types.ts` contiene il contratto condiviso di risultati, stati e opzioni, separato dai controlli locali. `cli/doctor-report.ts` è una funzione pura che mantiene l'ordine dei controlli, conta `OK`, `WARN`, `FAIL`, `SKIP`, aggiunge il riepilogo finale e calcola l'exit code. Il registrar stampa il rapporto su stdout e applica sempre quel codice; gli errori Commander restano su stderr. Un controllo saltato non viene contato come successo. L'help espone le regole anche senza inizializzare dipendenze.
+
+La versione Node proviene dal processo corrente. `diagnostics/npm-version.ts` esegue soltanto `npm --version`, con timeout di 10 secondi, limite di output di 64 KiB e `BB_TOKEN` rimosso dall'environment utile del figlio. Su Windows usa `cmd.exe /d /s /c` con comando fisso per avviare il launcher npm; sulle altre piattaforme esegue npm direttamente. La versione Git passa da `GitClient.version()`, con timeout di 10 secondi e senza autenticazione o letture della configurazione. Il client diagnostico è indipendente dal client dei comandi Git per funzionare anche con un file di configurazione danneggiato.
+
+Lo store viene interrogato tramite `exists()` e una sola `snapshot()` quando il file è presente. Si mostra il percorso, ma non i valori, i contenuti JSON o gli errori nativi non filtrati. Un controllo fallito non interrompe gli altri. Non si scrivono file; senza `--remote` non si inizializza il client Bitbucket.
+
+`application/doctor/credential-diagnostics.ts` aggiunge la diagnostica delle credenziali. `TokenStore.describeSource()` restituisce soltanto la sorgente prevista e il tool dichiarato dal backend, senza letture né validazione del secret. La presenza di `BB_TOKEN`, anche vuota, evita di ispezionare il backend. `diagnostics/executable.ts` verifica file e permessi di esecuzione tramite percorso assoluto o `PATH`, senza avviare il tool; non garantisce l'accessibilità della sessione del portachiavi.
+
+I backend condividono inoltre il proprio suggerimento statico di ripristino tramite `hint`, riutilizzato dal runner delle operazioni token e dalla diagnostica. La descrizione resta priva di secret e non esegue processi. Questo consente indicazioni specifiche per DPAPI, Keychain e Secret Service senza duplicare i messaggi. Un backend non supportato o un tool assente lascia la lettura `SKIP`.
+
+Il registrar passa `DoctorOptions.checkToken` tramite il contesto. Senza opzione la lettura è `SKIP`; con `--check-token` si usa `TokenStore.inspectCredential()`, che legge e valida senza restituire il secret e senza popolare la cache. Tool assente o backend non supportato producono `WARN` per default e `FAIL` se si richiede la lettura; token assente, valore non valido o errore di accesso durante la verifica esplicita producono `FAIL`. La mancanza del tool impedisce di tentare la lettura. Gli errori sono filtrati; non si effettuano scritture o verifiche di autenticazione remote. La lettura può richiedere autorizzazione al sistema operativo e mantiene il timeout nativo di 60 secondi dei backend.
+
+`DoctorOptions.remote` abilita la verifica remota e implica la lettura della credenziale. I controlli locali restituiscono `LocalDiagnosis`, composto da righe del rapporto e URL del server validato: l'orchestratore riutilizza questo URL senza rileggere il file né imporre la project key. Soltanto quando la validazione completa della snapshot fallisce, il controllo locale tenta un `get` della singola chiave URL se è richiesta la prova remota, preservando l'indipendenza da errori semantici di altre impostazioni. Se l'URL non è utilizzabile, evita di leggere il token, salvo un `checkToken` esplicito. Per il controllo remoto richiede `TokenStore.inspectCredential({ cacheForUse: true })`, così `get()` riutilizza il token validato senza un secondo processo del portachiavi; `main.ts` svuota la cache nel `finally`. Il comportamento di `inspectCredential()` senza opzioni resta privo di cache. La diagnostica delle credenziali restituisce `CredentialDiagnosis`, con le righe del rapporto e `readyForRemote`: soltanto l'ispezione riuscita abilita il client HTTP. L'orchestratore non deduce i prerequisiti dagli stati o dai messaggi destinati al rapporto.
+
+`bitbucket/authentication.ts` esegue una sola GET alla dashboard delle PR dell'utente autenticato, con `limit=1`, sotto `/rest/api/latest/`; valida la pagina tramite `parsePage` senza usare o mostrare il contenuto delle PR. La scelta dell'endpoint segue la [documentazione Data Center](https://developer.atlassian.com/server/bitbucket/rest/v819/api-group-dashboard/) ed evita di dedurre l'autenticazione da risorse potenzialmente pubbliche. Non verifica permessi su progetti o repository; credenziali limitate a tali risorse potrebbero non accedere alla dashboard. La compatibilità con le policy e la versione aziendale richiede una prova reale.
+
+Il client diagnostico usa l'URL configurato, un timeout di 10 secondi e redirect `manual`, senza modificare il comportamento predefinito degli altri client. `classifyRemoteFailure` in `application/doctor/remote-diagnostics.ts` è una funzione pura che traduce status HTTP e `BitbucketApiError.kind` (`http`, `connection`, `timeout`, `response`) in risultati filtrati: nessuna analisi dei messaggi d'errore, nessuna stampa del corpo o degli errori nativi. Una risposta HTTP conferma soltanto la raggiungibilità; dashboard JSON valida conferma accesso autenticato. HTTP 401 e 403 vengono descritti senza dedurre con certezza la validità del token. Timeout, SSO/redirect, JSON inatteso e problemi del server producono errori distinti. Non vengono eseguiti retry né scritture REST.
+
+Senza risposta HTTP, l'autenticazione è `SKIP`, anche in caso di timeout; se il timeout avviene leggendo il corpo, la connessione è raggiunta ma l'autenticazione non è confermata e produce `FAIL`. Uno status HTTP di errore già disponibile conserva la propria diagnosi anche se il corpo non è leggibile. HTTP 429 indica di attendere prima di ripetere il comando. I messaggi di configurazione, tool e validazione locale del token descrivono soltanto il proprio controllo, senza anticipare l'esito remoto.
 
 ## Configurazione globale
 
@@ -151,6 +189,8 @@ Il backend Windows rimuove anche `PSModulePath` dall'environment figlio, senza m
 ## Trasporto Bitbucket
 
 Il server è Bitbucket Data Center, con API `/rest/api/latest/`. Tutte le richieste passano da `BitbucketClient`: URL base e context path, Bearer, header JSON, serializzazione, lettura e gestione errori sono centralizzati. I comandi non invocano `fetch`.
+
+`BitbucketClient` riceve soltanto l'URL base, il provider del token e le opzioni di trasporto: non richiede project key o reviewer, che appartengono ai comandi. Il client diagnostico non usa valori fittizi di configurazione.
 
 Ogni richiesta ha una deadline predefinita di 60 secondi, inclusa la lettura del corpo; il timer viene sempre rimosso. Il costruttore accetta timeout e `fetch` sostituibili. Non introdurre retry automatici, soprattutto per creazione, merge e task: una scrittura può essere riuscita prima dell'errore osservato dal client.
 
@@ -209,6 +249,8 @@ Un errore o conflitto interrompe il flusso senza tentare il merge; i task già r
 Durante lo sviluppo Node esegue TypeScript direttamente. Il build con `tsconfig.build.json` genera il JavaScript di distribuzione; `prepare` lo avvia e il launcher npm punta a `dist/main.js`. Lo stesso lifecycle copre `npm pack`, l'installazione da Git e `npm install`/`npm ci` nel checkout. Non affiancare un secondo hook `prepack` che esegua nuovamente il build. Il pacchetto è privato e supporta la distribuzione tramite tarball o installazione diretta da GitHub; `dist/` rimane ignorata da Git.
 
 L'allowlist del pacchetto comprende solo runtime JavaScript, manifest, README e Commander con licenza, incluso tramite `bundleDependencies`. `npm run test:package` verifica contenuti, installazione offline con cache vuota e dipendenze di produzione, launcher e configurazione fittizia. Prefisso e dati temporanei sono isolati e ripuliti, senza modificare l'installazione globale o la configurazione reale.
+
+La verifica del pacchetto include help e rapporto di `doctor` installato, con token fittizio in `BB_TOKEN`, e controlla exit code `0` con avvisi e `1` con token vuoto. Non legge portachiavi personali né esegue verifiche remote. Le prove HTTP simulate coprono separatamente errori di connessione, timeout, accesso, parser e prerequisiti; le prove native del server aziendale restano esterne alla suite offline.
 
 `npm run test:git` crea un repository Git locale temporaneo dai file necessari al build, senza artefatti compilati né dipendenze già installate. Lo installa tramite URL `git+file` con SHA esplicito, lasciando che npm scarichi le dipendenze ed esegua `prepare`, poi verifica il launcher e le dipendenze di produzione. Richiede accesso al registry e rimane separato dalla suite offline. La CI esegue anche questa prova su Windows, Linux e macOS.
 

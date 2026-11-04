@@ -17,6 +17,9 @@ const mainUrl = new URL("../../src/main.ts", import.meta.url);
 
 function createContext(gitClient?: GitOperations): CommandContext {
     return {
+        get doctor(): never {
+            throw new Error("Doctor must remain lazy.");
+        },
         get tokenStore(): never {
             throw new Error("Token storage must remain lazy.");
         },
@@ -62,6 +65,7 @@ function createDirectory(t: TestContext): string {
 
 for (const command of [
     [],
+    ["doctor"],
     ["config"],
     ["config", "list"],
     ["config", "init"],
@@ -83,6 +87,7 @@ for (const command of [
         assert.equal(stderr, "");
         if (command.length === 0) {
             for (const name of [
+                "doctor",
                 "config",
                 "git",
                 "get-pr-url",
@@ -97,10 +102,17 @@ for (const command of [
             assert.ok(stdout.includes("--complete-tasks"));
             assert.ok(stdout.includes("--message-prefix"));
         }
+        if (command[0] === "doctor") {
+            assert.match(stdout, /--check-token/);
+            assert.match(stdout, /--remote/);
+            assert.match(stdout, /Exit code: 1 if any check fails, otherwise 0/);
+        }
     });
 }
 
 const invalidArguments = [
+    ["doctor", "unexpected"],
+    ["doctor", "--unknown-option"],
     ["unknown-command"],
     ["--path"],
     ["get-pr-url", "develop", "--unknown-option"],

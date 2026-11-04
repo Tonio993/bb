@@ -8,6 +8,9 @@ import { runCli } from "./cli/cli.ts";
 import type { CommandContext } from "./cli/command-context.ts";
 import { ConfigStore } from "./config/config-store.ts";
 import { GitClient } from "./git/git-client.ts";
+import { runDoctor } from "./application/doctor/run-doctor.ts";
+import { readNpmVersion } from "./diagnostics/npm-version.ts";
+import { isExecutableAvailable } from "./diagnostics/executable.ts";
 
 const configStore = new ConfigStore();
 
@@ -26,6 +29,28 @@ const getConfig = () => {
 };
 
 const context: CommandContext = {
+    doctor: (options = {}) =>
+        runDoctor(
+            {
+                nodeVersion: process.versions.node,
+                npmVersion: readNpmVersion,
+                gitVersion: () =>
+                    new GitClient(
+                        "origin",
+                        () => tokenStore.get(),
+                        () => undefined,
+                    ).version(),
+                configStore,
+                tokenStore,
+                toolAvailable: isExecutableAvailable,
+                createRemoteClient: (url) =>
+                    new BitbucketClient(url, () => tokenStore.get(), {
+                        timeoutMs: 10000,
+                        redirect: "manual",
+                    }),
+            },
+            options,
+        ),
     tokenStore,
     configStore,
 
@@ -34,7 +59,7 @@ const context: CommandContext = {
     },
 
     get bitbucketClient() {
-        cachedBitbucketClient ??= new BitbucketClient(getConfig().bitbucket, () =>
+        cachedBitbucketClient ??= new BitbucketClient(getConfig().bitbucket.url, () =>
             tokenStore.get(),
         );
 

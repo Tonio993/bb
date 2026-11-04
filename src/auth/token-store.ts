@@ -26,6 +26,11 @@ export class TokenStore {
         return this.storage.name;
     }
 
+    describeSource(): { source: string; tool?: string; hint?: string } {
+        if (this.environment.BB_TOKEN !== undefined) return { source: "BB_TOKEN" };
+        return { source: this.storage.name, tool: this.storage.tool, hint: this.storage.hint };
+    }
+
     get(): string {
         if (this.environment.BB_TOKEN !== undefined)
             return normalizeToken(this.environment.BB_TOKEN);
@@ -39,14 +44,15 @@ export class TokenStore {
         return this.cachedToken;
     }
 
-    source(): string | undefined {
+    inspectCredential(options: { cacheForUse?: boolean } = {}): string | undefined {
         if (this.environment.BB_TOKEN !== undefined) {
             normalizeToken(this.environment.BB_TOKEN);
             return "BB_TOKEN";
         }
-        const token = this.storage.read();
+        const token = (options.cacheForUse ? this.cachedToken : undefined) ?? this.storage.read();
         if (!token) return undefined;
-        normalizeToken(token);
+        const normalized = normalizeToken(token);
+        if (options.cacheForUse) this.cachedToken = normalized;
         return this.backend;
     }
 

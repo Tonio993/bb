@@ -7,16 +7,20 @@ export function createLinuxBackend(
     execute: TokenCommandRunner,
 ): TokenBackend {
     const name = "Linux Secret Service";
+    const tool = "secret-tool";
+    const hint = "Install secret-tool (libsecret) and unlock a Secret Service session.";
     const run = commandRunner({
         name,
-        command: "secret-tool",
+        command: tool,
         environment,
         execute,
-        hint: "Install secret-tool (libsecret) and unlock a Secret Service session.",
+        hint,
         isMissing: (result) => result.status === 1 && !result.stderr.trim(),
     });
     return {
         name,
+        tool,
+        hint,
         read() {
             return run(["lookup", "service", service, "account", account], undefined, true);
         },

@@ -6,7 +6,7 @@ import { readTokenInput } from "../token-input.ts";
 
 export function registerTokenCommand(program: Command, context: CommandContext): void {
     const showStatus = () => {
-        const source = context.tokenStore.source();
+        const source = context.tokenStore.inspectCredential();
         console.log(
             source
                 ? `Bitbucket token source: ${source}`

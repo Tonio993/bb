@@ -25,6 +25,9 @@ function fixture(t: TestContext) {
     );
     const output = t.mock.method(console, "log", () => {});
     const context: CommandContext = {
+        get doctor(): never {
+            throw new Error("Doctor must remain lazy.");
+        },
         tokenStore,
         get configStore(): never {
             throw new Error("Token commands must not access application configuration.");
@@ -54,7 +57,7 @@ test("token status reports only the active source without configuration or clien
 
 test("missing credentials produce a nonzero status without revealing a token", async (t) => {
     const { context, tokenStore, output } = fixture(t);
-    t.mock.method(tokenStore, "source", () => undefined);
+    t.mock.method(tokenStore, "inspectCredential", () => undefined);
     const originalExitCode = process.exitCode;
     t.after(() => {
         process.exitCode = originalExitCode;

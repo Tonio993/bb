@@ -7,16 +7,20 @@ export function createMacOsBackend(
     execute: TokenCommandRunner,
 ): TokenBackend {
     const name = "macOS Keychain";
+    const tool = "/usr/bin/security";
+    const hint = "Unlock the login keychain and allow access.";
     const run = commandRunner({
         name,
-        command: "/usr/bin/security",
+        command: tool,
         environment,
         execute,
-        hint: "Unlock the login keychain and allow access.",
+        hint,
         isMissing: (result) => result.status === 44,
     });
     return {
         name,
+        tool,
+        hint,
         read() {
             return run(
                 ["find-generic-password", "-s", service, "-a", account, "-w"],

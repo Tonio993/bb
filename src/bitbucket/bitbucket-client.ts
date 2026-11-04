@@ -1,4 +1,3 @@
-import type { BbConfig } from "../config/config-schema.ts";
 import { BitbucketApiError } from "./bitbucket-api-error.ts";
 
 type HttpMethod = "GET" | "POST" | "PUT" | "DELETE";
@@ -13,21 +12,24 @@ export type FetchImplementation = (
 export type BitbucketApi = Pick<BitbucketClient, "get" | "post" | "put">;
 
 type BitbucketClientOptions = {
+    redirect?: RequestRedirect;
     timeoutMs?: number;
     fetch?: FetchImplementation;
 };
 
 export class BitbucketClient {
+    private readonly redirect: RequestRedirect | undefined;
     private readonly baseUrl: string;
     private readonly tokenProvider: TokenProvider;
     private readonly timeoutMs: number;
     private readonly fetch: FetchImplementation;
 
     constructor(
-        config: BbConfig["bitbucket"],
+        baseUrl: string,
         tokenProvider: TokenProvider,
         options: BitbucketClientOptions = {},
     ) {
+        this.redirect = options.redirect;
         this.timeoutMs = options.timeoutMs ?? 60000;
         if (
             !Number.isInteger(this.timeoutMs) ||
@@ -38,7 +40,7 @@ export class BitbucketClient {
                 "Bitbucket request timeout must be a positive integer no greater than 2147483647 milliseconds.",
             );
         }
-        this.baseUrl = config.url.replace(/\/+$/, "");
+        this.baseUrl = baseUrl.replace(/\/+$/, "");
         this.tokenProvider = tokenProvider;
         this.fetch = options.fetch ?? globalThis.fetch;
     }
@@ -86,6 +88,7 @@ export class BitbucketClient {
             method,
             headers,
         };
+        if (this.redirect !== undefined) request.redirect = this.redirect;
 
         if (body !== undefined) {
             headers["Content-Type"] = "application/json; charset=utf-8";
@@ -107,7 +110,7 @@ export class BitbucketClient {
                 const message = getBitbucketErrorMessage(responseBody, response.statusText);
                 throw new BitbucketApiError(
                     `Bitbucket API request failed [${response.status}]: ${message}`,
-                    { statusCode: response.status, method, path },
+                    { statusCode: response.status, method, path, kind: "http" },
                 );
             }
 
@@ -121,6 +124,7 @@ export class BitbucketClient {
                     `Invalid Bitbucket response [${response.status}]: ${message}`,
                     {
                         statusCode: response.status,
+                        kind: "response",
                         method,
                         path,
                     },
@@ -134,7 +138,12 @@ export class BitbucketClient {
                 : response
                   ? `Unable to read Bitbucket response [${response.status}]: ${detail}`
                   : `Unable to connect to Bitbucket: ${detail}`;
-            throw new BitbucketApiError(message, { statusCode: response?.status, method, path });
+            throw new BitbucketApiError(message, {
+                statusCode: response?.status,
+                method,
+                path,
+                kind: controller.signal.aborted ? "timeout" : response ? "response" : "connection",
+            });
         } finally {
             clearTimeout(timer);
         }

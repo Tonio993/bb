@@ -97,6 +97,60 @@ Per scaricarlo:
 
 Gli artifact sono conservati per 30 giorni. La generazione avviene anche sulle Pull Request e nelle esecuzioni manuali, dopo il successo dell'intera matrice. Non viene eseguito `npm publish` e non viene creata una release GitHub.
 
+## Diagnostica locale
+
+```powershell
+bb doctor
+bb doctor --check-token
+bb doctor --remote
+```
+
+Dal checkout usare `node src/main.ts doctor`. Il comando controlla la versione Node.js corrente, la versione npm disponibile nel `PATH`, la disponibilità di Git e il percorso e la validità della configurazione globale. Funziona anche fuori da un repository e prima di `config init`.
+
+| Modalità                  | Legge e valida il token                | Contatta Bitbucket                    |
+| ------------------------- | -------------------------------------- | ------------------------------------- |
+| `bb doctor`               | No                                     | No                                    |
+| `bb doctor --check-token` | Sì                                     | No                                    |
+| `bb doctor --remote`      | Sì, se URL e backend sono utilizzabili | Una GET se i prerequisiti sono validi |
+
+Le opzioni `--remote` e `--check-token` possono essere combinate; non provocano una seconda lettura del token persistente. Un `--check-token` esplicito permette la verifica locale della credenziale anche quando manca l'URL del server.
+
+| Stato  | Significato                                                                                    |
+| ------ | ---------------------------------------------------------------------------------------------- |
+| `OK`   | Il singolo controllo è riuscito nel proprio ambito.                                            |
+| `WARN` | Configurazione incompleta o limite che non impedisce la modalità richiesta.                    |
+| `FAIL` | Un controllo o un prerequisito necessario è fallito.                                           |
+| `SKIP` | Controllo non richiesto o impossibile per un prerequisito fallito; non equivale a un successo. |
+
+Il rapporto termina con una riga come `Summary: 6 OK, 1 WARN, 0 FAIL, 1 SKIP`. Tutte le righe del rapporto, anche quelle `FAIL`, sono su stdout. Gli errori di sintassi CLI restano su stderr. L'exit code complessivo è `1` se almeno un controllo è `FAIL`, altrimenti `0`: `WARN` e `SKIP` non causano da soli un errore. I numeri dipendono dall'ambiente e dalle opzioni. Un timeout prima di ricevere una risposta produce `FAIL` per la connessione e `SKIP` per l'autenticazione; un timeout del corpo dopo la risposta impedisce di confermare l'autenticazione.
+
+Ogni controllo produce una riga con stato `OK`, `WARN`, `FAIL` o `SKIP` quando una verifica non viene eseguita. Una configurazione assente o incompleta produce un avviso con le chiavi mancanti; un file non leggibile o non valido produce un errore. La configurazione viene validata senza mostrarne i valori. npm precedente alla 12.2.1, oppure Node precedente alla 24.15.0 ma compatibile con il runtime, produce un avviso sui requisiti dell'installazione da Git; non impedisce l'uso del tarball.
+
+Il comando mostra la sorgente prevista delle credenziali: `BB_TOKEN`, se definita, oppure il backend della piattaforma. Questa indicazione non conferma la presenza di un token. Per il backend verifica soltanto che il relativo eseguibile sia disponibile: `powershell.exe`, `/usr/bin/security` o `secret-tool`, senza avviarlo o leggere il portachiavi. Se `BB_TOKEN` è definita, il backend persistente e il suo tool vengono ignorati, anche quando il valore della variabile è vuoto o non valido.
+
+`--check-token` richiede esplicitamente la lettura e la validazione locale della credenziale attiva. Può attivare una richiesta di accesso del sistema operativo. Il token non viene mostrato, salvato o modificato. Token assente, variabile non valida, tool necessario indisponibile o errore di accesso producono `FAIL`, con indicazioni correttive senza diagnostiche native. Senza l'opzione la lettura è `SKIP` e un tool mancante produce soltanto `WARN`. La disponibilità del tool non garantisce che il portachiavi sia sbloccato o che Secret Service sia attivo; la verifica di lettura usa i backend esistenti, con timeout dei processi nativi di 60 secondi.
+
+`--remote` aggiunge una verifica di connessione e autenticazione sul server configurato e implica la lettura del token, con eventuale richiesta di accesso del sistema operativo. Esegue una sola GET a `/rest/api/latest/dashboard/pull-requests?limit=1&start=0`, una risorsa della dashboard dell'utente autenticato documentata nelle [API Data Center](https://developer.atlassian.com/server/bitbucket/rest/v819/api-group-dashboard/). Una pagina valida, anche vuota, conferma l'accesso autenticato alla dashboard; non conferma i permessi sui singoli progetti o repository. Non richiede una project key né un repository locale. Token di progetto o repository e restrizioni aziendali possono impedire l'accesso alla dashboard: un rifiuto non prova da solo che il token sia scaduto.
+
+La verifica remota ha un timeout di 10 secondi, inclusa la lettura della risposta, non segue redirect e non esegue retry. Distingue errori di connessione, timeout, HTTP 401, accesso negato 403, endpoint non trovato e problemi del server. Un 401 può dipendere da credenziali o permessi; un 403 non conferma da solo l'identità autenticata. Risposte HTML o JSON inattese indicano una possibile configurazione errata di URL, context path, proxy o SSO. Non vengono stampati token, dati delle PR o contenuti delle risposte di errore. URL mancante o non valido e credenziali non utilizzabili impediscono la richiesta; senza URL il token non viene letto, salvo un `--check-token` esplicito. Un token persistente validato viene riutilizzato in memoria per la richiesta e rimosso dalla cache al termine.
+
+I controlli proseguono anche dopo un errore. L'exit code è `1` se almeno un controllo è `FAIL`, altrimenti `0`, anche in presenza di avvisi. Le verifiche di npm e Git hanno ciascuna un timeout di 10 secondi. Il comando non modifica configurazione o dipendenze; senza `--remote` non effettua richieste a Bitbucket e non verifica l'autenticazione sul server. Non contatta il registry. Il comportamento dell'endpoint con la versione e le policy del server aziendale resta da verificare dal vivo; la suite automatica usa risposte simulate.
+
+Per i problemi più comuni:
+
+| Segnalazione                           | Intervento                                                                                                   |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Configurazione assente o incompleta    | Eseguire `bb config init`; per un file non valido controllare accesso, JSON e valori nel percorso riportato. |
+| npm precedente alla 12.2.1             | Con Node compatibile, eseguire `npm install --global npm@12.2.1`; altrimenti aggiornare prima Node.          |
+| Token assente o `BB_TOKEN` non valida  | Eseguire `bb token set` oppure correggere la variabile; rimuovere `BB_TOKEN` per usare il token persistente. |
+| Errore DPAPI                           | Verificare `powershell.exe` e usare l'account Windows che possiede il token.                                 |
+| Errore Keychain                        | Sbloccare il portachiavi di login e consentire l'accesso.                                                    |
+| Errore Secret Service                  | Installare `secret-tool` di libsecret e sbloccare una sessione Secret Service.                               |
+| HTTP 401 o 403                         | Verificare validità, ambito e permessi del token, oltre alle restrizioni dell'account.                       |
+| Redirect, HTTP 404 o risposta inattesa | Verificare `bitbucket.url`, context path, proxy, SSO e compatibilità del server.                             |
+| Connessione fallita o timeout          | Verificare rete, DNS, proxy, certificati TLS e disponibilità del server.                                     |
+| HTTP 429                               | Attendere prima di ripetere il comando; non viene effettuato un retry automatico.                            |
+
 ## Configurazione globale
 
 `config init` chiede un valore alla volta. Mostra i valori esistenti come default e li mantiene premendo Invio. Non richiede una configurazione già completa né un token.
@@ -193,6 +247,7 @@ Quando entrambi i branch sono specificati, la CLI evita di interrogare il branch
 | Comando                         | Risultato                                              |
 | ------------------------------- | ------------------------------------------------------ |
 | `config [key] [value]`          | Elenca, legge o modifica la configurazione             |
+| `doctor`                        | Controlla strumenti locali e configurazione            |
 | `config list`                   | Elenca impostazioni e percorso del file                |
 | `config init`                   | Configura le impostazioni in modo interattivo          |
 | `token set [--stdin]`           | Salva il token con input nascosto o da una pipe        |
@@ -326,7 +381,7 @@ Remove-Item Env:BB_TEST_NATIVE_TOKEN_STORE
 
 Le regole di lavoro sono in [AGENTS.md](AGENTS.md); responsabilità dei moduli e invarianti sono descritte in [docs/architecture.md](docs/architecture.md).
 
-La [mappa dei file](docs/architecture.md#mappa-dei-file) mostra la struttura completa. I comandi sono in `src/cli/commands/`, le regole pure in `src/pull-request/` e i test seguono le stesse aree di `src/`. Schema, validazione e persistenza della configurazione hanno moduli distinti; i backend nativi del token sono raccolti in `src/auth/backends/`.
+La [mappa dei file](docs/architecture.md#mappa-dei-file) mostra la struttura completa. La diagnostica applicativa di doctor è raccolta in `src/application/doctor/`, con test corrispondenti in `test/application/doctor/`; i test del bootstrap sono separati in `test/cli/doctor-bootstrap.test.ts`. I comandi sono in `src/cli/commands/`, le regole pure in `src/pull-request/` e i test seguono le stesse aree di `src/`. Schema, validazione e persistenza della configurazione hanno moduli distinti; i backend nativi del token sono raccolti in `src/auth/backends/`.
 
 ## Attività rimanenti
 

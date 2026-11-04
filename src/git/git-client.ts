@@ -54,6 +54,13 @@ export class GitClient {
         return branch;
     }
 
+    version(): string {
+        const args = ["--version"];
+        const result = this.execute(args, false, "pipe", 10000);
+        this.assertExitCode(result, args);
+        return result.stdout.trim();
+    }
+
     currentRepository(): string {
         const repositoryPath = this.capture(["rev-parse", "--show-toplevel"]);
 
@@ -97,6 +104,7 @@ export class GitClient {
         args: string[],
         authenticated = false,
         stdio: "inherit" | "pipe" = "pipe",
+        timeout?: number,
     ): GitExecutionResult {
         const result = this.executeCommand("git", args, {
             encoding: "utf8",
@@ -104,6 +112,7 @@ export class GitClient {
             shell: false,
             windowsHide: true,
             maxBuffer: maxCaptureBytes,
+            timeout,
             env: this.createEnvironment(authenticated),
         });
 

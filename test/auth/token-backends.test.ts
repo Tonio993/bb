@@ -82,7 +82,7 @@ test("an unsupported platform still supports environment credentials without inv
     const { backend, execute } = fixture(t, "aix");
     const store = new TokenStore(backend, { BB_TOKEN: "environment-token" });
     assert.equal(store.get(), "environment-token");
-    assert.equal(store.source(), "BB_TOKEN");
+    assert.equal(store.inspectCredential(), "BB_TOKEN");
     for (const operation of [
         () => backend.name,
         () => backend.read(),
@@ -286,8 +286,8 @@ test(
             !readFileSync(join(path, "bb", "token.dat"), "utf8").includes("dpapi-test-token"),
         );
         assert.equal(store.get(), "dpapi-test-token");
-        assert.equal(store.source(), "Windows DPAPI");
+        assert.equal(store.inspectCredential(), "Windows DPAPI");
         store.delete();
-        assert.equal(store.source(), undefined);
+        assert.equal(store.inspectCredential(), undefined);
     },
 );

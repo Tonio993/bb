@@ -5,15 +5,10 @@ import { BitbucketApiError } from "../../src/bitbucket/bitbucket-api-error.ts";
 import { BitbucketClient, type FetchImplementation } from "../../src/bitbucket/bitbucket-client.ts";
 
 function createClient(request: FetchImplementation, timeoutMs?: number) {
-    return new BitbucketClient(
-        {
-            url: "https://bitbucket.example/bitbucket///",
-            projectKey: "PROJECT",
-            defaultReviewers: [],
-        },
-        () => "test-token",
-        { timeoutMs, fetch: request },
-    );
+    return new BitbucketClient("https://bitbucket.example/bitbucket///", () => "test-token", {
+        timeoutMs,
+        fetch: request,
+    });
 }
 
 const path = "/rest/api/latest/projects/PROJECT/repos/payments/pull-requests";

@@ -36,7 +36,7 @@ function createApi(t: TestContext) {
         return Response.json(response.body);
     });
     return {
-        client: new BitbucketClient(config.bitbucket, () => "test-token", { fetch: request }),
+        client: new BitbucketClient(config.bitbucket.url, () => "test-token", { fetch: request }),
         responses,
         requests,
     };
@@ -272,6 +272,9 @@ function createContext(
     return {
         config,
         bitbucketClient: client,
+        get doctor(): never {
+            throw new Error("Doctor must remain lazy.");
+        },
         get tokenStore(): never {
             throw new Error("Token storage is already injected in the client.");
         },
@@ -332,6 +335,9 @@ test("get-pr-urls prints only matching URLs and forwards the repository filter",
 
 test("get-pr-urls rejects identical branches before reading configuration or querying Bitbucket", async () => {
     const context: CommandContext = {
+        get doctor(): never {
+            throw new Error("Doctor must remain lazy.");
+        },
         get tokenStore(): never {
             throw new Error("Token storage must remain lazy.");
         },
