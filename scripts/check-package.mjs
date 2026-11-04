@@ -33,11 +33,15 @@ try {
     const artifacts = join(fixture, "artifacts");
     mkdirSync(artifacts);
     console.log("Building and packing the CLI...");
-    const [packed] = JSON.parse(
+    const packOutput = JSON.parse(
         npm(["pack", "--json", "--foreground-scripts=false", "--pack-destination", artifacts], {
             cwd: projectRoot,
         }),
     );
+    // npm 11 returns an array; npm 12 keys the results by package name.
+    const packages = Array.isArray(packOutput) ? packOutput : Object.values(packOutput);
+    assert.equal(packages.length, 1, "Expected exactly one packed package.");
+    const [packed] = packages;
 
     const expectedRuntime = readdirSync(join(projectRoot, "src"), { recursive: true })
         .filter((path) => path.endsWith(".ts"))
