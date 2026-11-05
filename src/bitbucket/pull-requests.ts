@@ -1,11 +1,26 @@
 import type { BitbucketApi } from "./bitbucket-client.ts";
-import type { BitbucketCommitMessageSuggestion, BitbucketPullRequest } from "./bitbucket-types.ts";
+import type {
+    BitbucketCommitMessageSuggestion,
+    BitbucketPullRequest,
+    BitbucketPullRequestDetails,
+} from "./bitbucket-types.ts";
 import type {
     CreatePullRequestOptions,
     PullRequestIdentity,
     MergePullRequestBody,
 } from "./pull-request-types.ts";
-import { parseCommitMessageSuggestion, parsePullRequest } from "./response-parsers.ts";
+import {
+    parseCommitMessageSuggestion,
+    parsePullRequest,
+    parsePullRequestDetails,
+} from "./response-parsers.ts";
+
+export async function getPullRequestDetails(
+    client: Pick<BitbucketApi, "get">,
+    identity: PullRequestIdentity,
+): Promise<BitbucketPullRequestDetails> {
+    return client.get(getPullRequestPath(identity), parsePullRequestDetails);
+}
 
 export async function createPullRequest(
     client: Pick<BitbucketApi, "post">,

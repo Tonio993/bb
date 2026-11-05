@@ -1,5 +1,5 @@
 import type { GitClient } from "../git/git-client.ts";
-import { normalizeBitbucketUrl } from "../config/bitbucket-url.ts";
+import { normalizeBitbucketUrl, normalizeBitbucketContextPath } from "../config/bitbucket-url.ts";
 import { normalizeSshHostnames } from "../config/ssh-hostnames.ts";
 import { parseBitbucketRemoteUrl } from "./remote-url.ts";
 import type { ParsedBitbucketRemote } from "./remote-url-types.ts";
@@ -22,7 +22,7 @@ export function resolveRepositoryContext(
         if (projectKey) return { projectKey, repository: repositoryOverride };
     }
     const server = new URL(normalizeBitbucketUrl(config.bitbucket.url));
-    const contextPath = normalizeContextPath(server.pathname);
+    const contextPath = normalizeBitbucketContextPath(server.pathname);
     const remote = parseBitbucketRemoteUrl(getGitClient().remoteFetchUrl(config.git.remote));
     assertRemoteMatchesServer(
         remote,
@@ -58,17 +58,5 @@ function assertRemoteMatchesServer(
         throw new Error(
             "The Git HTTP remote does not match the configured Bitbucket server and context path. Check 'bitbucket.url' and 'git.remote'.",
         );
-    }
-}
-
-function normalizeContextPath(path: string): string {
-    try {
-        return path
-            .split("/")
-            .map((part) => encodeURIComponent(decodeURIComponent(part)))
-            .join("/")
-            .replace(/\/+$/, "");
-    } catch {
-        throw new Error("Invalid Bitbucket context path. Check 'bitbucket.url'.");
     }
 }

@@ -13,3 +13,14 @@ export type ResolveRepositoryContextOptions = {
     repository?: string;
     sshHostnames?: readonly string[];
 };
+
+export type PullRequestReference =
+    | { kind: "id"; pullRequestId: number }
+    | {
+          kind: "url";
+          pullRequestId: number;
+          projectKey: string;
+          repository: string;
+          origin: string;
+          contextPath: string;
+      };

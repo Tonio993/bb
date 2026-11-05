@@ -39,3 +39,11 @@ export type MergePullRequestBody = {
     message?: string;
     autoSubject?: boolean;
 };
+
+export type PullRequestListState = "OPEN" | "MERGED" | "DECLINED" | "ALL";
+export type ListRepositoryPullRequestsOptions = {
+    projectKey: string;
+    repository: string;
+    state: PullRequestListState;
+    author?: string;
+};

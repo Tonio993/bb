@@ -5,9 +5,42 @@ import type {
     GetOpenPullRequestOptions,
     GetOpenPullRequestsOptions,
     BitbucketPullRequestWithRepository,
+    ListRepositoryPullRequestsOptions,
 } from "./pull-request-types.ts";
 import { getProjectRepositories } from "./repositories.ts";
-import { parsePullRequest } from "./response-parsers.ts";
+import { parsePullRequest, parsePullRequestDetails } from "./response-parsers.ts";
+import type { BitbucketPullRequestDetails } from "./bitbucket-types.ts";
+
+export async function listRepositoryPullRequests(
+    client: Pick<BitbucketApi, "get">,
+    options: ListRepositoryPullRequestsOptions,
+): Promise<BitbucketPullRequestDetails[]> {
+    if (!["OPEN", "MERGED", "DECLINED", "ALL"].includes(options.state))
+        throw new Error("Invalid Pull Request state filter.");
+    if (options.author !== undefined && !options.author.trim())
+        throw new Error("Author filter cannot be empty.");
+    const author = options.author?.trim().toLowerCase();
+    const results: BitbucketPullRequestDetails[] = [];
+    for await (const page of iterateBitbucketPages(
+        client,
+        repositoryPullRequestsPath(options.projectKey, options.repository, options.state),
+        parsePullRequestDetails,
+        "Pull Request",
+    )) {
+        for (const pr of page.values) {
+            if (options.state !== "ALL" && pr.state !== options.state) continue;
+            if (
+                author &&
+                ![pr.author.user.name, pr.author.user.slug].some(
+                    (value) => value?.toLowerCase() === author,
+                )
+            )
+                continue;
+            results.push(pr);
+        }
+    }
+    return results;
+}
 
 export async function getOpenPullRequest(
     client: Pick<BitbucketApi, "get">,
@@ -91,10 +124,14 @@ function getRepositoryPullRequestPages(
     projectKey: string,
     repository: string,
 ) {
-    const path =
-        `rest/api/latest/projects/${encodeURIComponent(projectKey)}` +
-        `/repos/${encodeURIComponent(repository)}/pull-requests?state=OPEN`;
+    const path = repositoryPullRequestsPath(projectKey, repository, "OPEN");
     return iterateBitbucketPages(client, path, parsePullRequest, "Pull Request");
+}
+
+function repositoryPullRequestsPath(projectKey: string, repository: string, state: string): string {
+    if (!projectKey.trim() || !repository.trim())
+        throw new Error("Pull Request project and repository are required.");
+    return `rest/api/latest/projects/${encodeURIComponent(projectKey)}/repos/${encodeURIComponent(repository)}/pull-requests?state=${encodeURIComponent(state)}`;
 }
 
 function matchesRepositoryFilter(

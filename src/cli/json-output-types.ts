@@ -1,3 +1,5 @@
+import type { BitbucketUser } from "../bitbucket/bitbucket-types.ts";
+
 export type JsonErrorCode =
     | "CLI_ARGUMENT_ERROR"
     | "JSON_OUTPUT_UNSUPPORTED"
@@ -44,4 +46,11 @@ export type PullRequestOutput = {
     source: { projectKey: string; repository: string; branch: string; ref: string };
     target: { projectKey: string; repository: string; branch: string; ref: string };
     reviewers: { status: string }[];
+};
+
+export type PullRequestViewOutput = Omit<PullRequestOutput, "reviewers"> & {
+    title: string;
+    author: BitbucketUser;
+    reviewers: { status: string; user: BitbucketUser | null }[];
+    openTasks: { id: number; text: string | null }[];
 };

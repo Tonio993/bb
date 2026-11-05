@@ -26,3 +26,15 @@ export function normalizeBitbucketUrl(value: string): string {
     }
     return url.href.replace(/\/+$/, "");
 }
+
+export function normalizeBitbucketContextPath(path: string): string {
+    try {
+        return path
+            .split("/")
+            .map((part) => encodeURIComponent(decodeURIComponent(part)))
+            .join("/")
+            .replace(/\/+$/, "");
+    } catch {
+        throw new Error("Invalid Bitbucket context path. Check 'bitbucket.url'.");
+    }
+}

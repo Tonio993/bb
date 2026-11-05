@@ -66,6 +66,9 @@ function createDirectory(t: TestContext): string {
 for (const command of [
     [],
     ["doctor"],
+    ["pr"],
+    ["pr", "list"],
+    ["pr", "show"],
     ["config"],
     ["config", "list"],
     ["config", "init"],
@@ -115,6 +118,8 @@ for (const command of [
 }
 
 const invalidArguments = [
+    ["pr", "list", "--state", "unknown"],
+    ["pr", "show"],
     ["get-pr-url", "feature/test", "develop", "--repository"],
     ["create-pr", "develop", "--repository"],
     ["merge-pr", "develop", "--repository"],

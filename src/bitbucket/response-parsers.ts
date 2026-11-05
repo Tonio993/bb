@@ -6,6 +6,8 @@ import type {
     BitbucketPullRequestReviewer,
     BitbucketPullRequestTask,
     BitbucketRepository,
+    BitbucketUser,
+    BitbucketPullRequestDetails,
 } from "./bitbucket-types.ts";
 
 function object(value: unknown, description: string): Record<string, unknown> {
@@ -55,7 +57,22 @@ function parseRef(value: unknown): BitbucketPullRequestRef {
 
 function parseReviewer(value: unknown): BitbucketPullRequestReviewer {
     const reviewer = object(value, "a Pull Request reviewer");
-    return { ...reviewer, status: text(reviewer.status, "Pull Request reviewer status") };
+    return {
+        ...reviewer,
+        status: text(reviewer.status, "Pull Request reviewer status"),
+        ...(reviewer.user === undefined ? {} : { user: parseUser(reviewer.user) }),
+    };
+}
+
+function parseUser(value: unknown): BitbucketUser {
+    const user = object(value, "a Bitbucket user");
+    const parsed: BitbucketUser = {};
+    for (const key of ["name", "slug", "displayName"] as const) {
+        if (user[key] !== undefined) parsed[key] = text(user[key], "user " + key);
+    }
+    if (!parsed.name && !parsed.slug)
+        throw new Error("Bitbucket did not provide a user login or slug.");
+    return parsed;
 }
 
 export function parsePullRequest(value: unknown): BitbucketPullRequest {
@@ -75,6 +92,10 @@ export function parsePullRequest(value: unknown): BitbucketPullRequest {
         version: pr.version,
         state: text(pr.state, "Pull Request state"),
         reviewers: pr.reviewers.map(parseReviewer),
+        ...(pr.title === undefined ? {} : { title: text(pr.title, "Pull Request title") }),
+        ...(pr.author === undefined
+            ? {}
+            : { author: { user: parseUser(object(pr.author, "a Pull Request author").user) } }),
         fromRef: parseRef(pr.fromRef),
         toRef: parseRef(pr.toRef),
         links: {
@@ -87,6 +108,13 @@ export function parsePullRequest(value: unknown): BitbucketPullRequest {
     };
 }
 
+export function parsePullRequestDetails(value: unknown): BitbucketPullRequestDetails {
+    const pr = parsePullRequest(value);
+    if (!pr.title || !pr.author)
+        throw new Error("Bitbucket did not provide the Pull Request title and author.");
+    return { ...pr, title: pr.title, author: pr.author };
+}
+
 export function parseTask(value: unknown): BitbucketPullRequestTask {
     const task = object(value, "a Pull Request task");
     return {
@@ -95,6 +123,14 @@ export function parseTask(value: unknown): BitbucketPullRequestTask {
         version: integer(task.version, "Pull Request task version"),
         state: text(task.state, "Pull Request task state"),
         severity: text(task.severity, "Pull Request task severity"),
+        ...(task.text === undefined
+            ? {}
+            : {
+                  text:
+                      typeof task.text === "string"
+                          ? task.text
+                          : text(task.text, "Pull Request task text"),
+              }),
     };
 }
 

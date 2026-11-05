@@ -3,7 +3,11 @@ import { test } from "node:test";
 import type { TestContext } from "node:test";
 import { BitbucketApiError } from "../../src/bitbucket/bitbucket-api-error.ts";
 import { BitbucketClient, type FetchImplementation } from "../../src/bitbucket/bitbucket-client.ts";
-import { createPullRequest, getPullRequest } from "../../src/bitbucket/pull-requests.ts";
+import {
+    createPullRequest,
+    getPullRequest,
+    getPullRequestDetails,
+} from "../../src/bitbucket/pull-requests.ts";
 import { getOpenPullRequest } from "../../src/bitbucket/pull-request-search.ts";
 import { getProjectRepositories } from "../../src/bitbucket/repositories.ts";
 import { parseCommitMessageSuggestion, parseTask } from "../../src/bitbucket/response-parsers.ts";
@@ -20,6 +24,31 @@ const pr = {
     links: { self: [{ href: "https://bitbucket.example/pull-requests/42" }] },
 };
 const page = { values: [repository], size: 1, limit: 100, start: 0, isLastPage: true };
+
+for (const metadata of [
+    { title: 42 },
+    { author: null },
+    { author: { user: { displayName: "Missing login" } } },
+    { author: { user: { name: "jane", slug: 42 } } },
+    { reviewers: [{ status: "APPROVED", user: { name: null } }] },
+]) {
+    test("consultation rejects malformed metadata " + JSON.stringify(metadata), async (t) => {
+        const f = api(t, {
+            ...pr,
+            title: "Title",
+            author: { user: { name: "jane" } },
+            ...metadata,
+        });
+        await assert.rejects(getPullRequestDetails(f.client, identity), invalidResponse);
+    });
+}
+
+test("task text is optional, allows empty strings, and rejects non-strings", () => {
+    const task = { id: 1, version: 0, state: "OPEN", severity: "BLOCKER" };
+    assert.equal(parseTask(task).text, undefined);
+    assert.equal(parseTask({ ...task, text: "" }).text, "");
+    for (const text of [null, 42, {}, []]) assert.throws(() => parseTask({ ...task, text }));
+});
 
 function api(t: TestContext, body: unknown, status = 200) {
     const request = t.mock.fn<FetchImplementation>(async () => Response.json(body, { status }));

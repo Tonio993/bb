@@ -15,7 +15,10 @@ export type BitbucketPullRequestRef = {
 
 export type BitbucketPullRequestReviewer = {
     status: string;
+    user?: BitbucketUser;
 };
+
+export type BitbucketUser = { name?: string; slug?: string; displayName?: string };
 
 export type BitbucketCommitMessageSuggestion = {
     title?: string;
@@ -27,6 +30,7 @@ export type BitbucketPullRequestTask = {
     version: number;
     state: string;
     severity: string;
+    text?: string;
 };
 
 export type BitbucketPullRequest = {
@@ -34,6 +38,8 @@ export type BitbucketPullRequest = {
     version: number;
     state: string;
     reviewers: BitbucketPullRequestReviewer[];
+    title?: string;
+    author?: { user: BitbucketUser };
 
     fromRef: BitbucketPullRequestRef;
     toRef: BitbucketPullRequestRef;
@@ -43,6 +49,11 @@ export type BitbucketPullRequest = {
             href: string;
         }[];
     };
+};
+
+export type BitbucketPullRequestDetails = BitbucketPullRequest & {
+    title: string;
+    author: { user: BitbucketUser };
 };
 
 export type BitbucketPage<T> = {

@@ -9,11 +9,13 @@ import { registerGitCommand } from "./git-command.ts";
 import { registerMergePrCommand } from "./merge-pr-command.ts";
 import { registerTokenCommand } from "./token-command.ts";
 import { registerDoctorCommand } from "./doctor-command.ts";
+import { registerPrCommand } from "./pr-command.ts";
 
 type CommandRegistrar = (program: Command, context: CommandContext) => void;
 
 const commandRegistrars: CommandRegistrar[] = [
     registerDoctorCommand,
+    registerPrCommand,
     registerConfigCommand,
     registerTokenCommand,
     registerGitCommand,
