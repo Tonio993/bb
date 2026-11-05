@@ -55,8 +55,8 @@ try {
     assert.deepEqual(packed.bundled, ["commander"]);
     assert.deepEqual(
         packedPaths.filter((path) => !path.startsWith("node_modules/commander/")).sort(),
-        [...expectedRuntime, "README.md", "package.json"].sort(),
-        "The package must contain only runtime JavaScript, its manifest, README, and bundled Commander.",
+        [...expectedRuntime, "README.md", "docs/json-output.md", "package.json"].sort(),
+        "The package must contain only runtime JavaScript, its manifest, README, JSON contract, and bundled Commander.",
     );
     for (const file of ["package.json", "index.js", "lib/command.js", "LICENSE"]) {
         assert.ok(
@@ -87,6 +87,10 @@ try {
             ? join(prefix, "node_modules", "bb")
             : join(prefix, "lib", "node_modules", "bb");
     const manifest = JSON.parse(readFileSync(join(installedPackage, "package.json"), "utf8"));
+    assert.equal(
+        readFileSync(join(installedPackage, "docs", "json-output.md"), "utf8"),
+        readFileSync(join(projectRoot, "docs", "json-output.md"), "utf8"),
+    );
     assert.equal(manifest.bin.bb, "dist/main.js");
     assert.deepEqual(manifest.bundleDependencies, ["commander"]);
     assert.equal(
@@ -132,11 +136,13 @@ try {
         const commandHelp = run(process.execPath, [main, command, "--help"], { env: environment });
         assert.match(commandHelp, /--repository <slug>/);
         assert.match(commandHelp, /--project-key <key>/);
+        assert.match(commandHelp, /--json/);
         if (command === "merge-pr") assert.match(commandHelp, /--delete-source/);
     }
     const doctorHelp = run(process.execPath, [main, "doctor", "--help"], { env: environment });
     assert.match(doctorHelp, /--check-token/);
     assert.match(doctorHelp, /--remote/);
+    assert.match(doctorHelp, /--json/);
     const doctor = run(process.execPath, [main, "doctor", "--check-token"], {
         env: { ...environment, BB_TOKEN: "package-smoke-token" },
     });
@@ -153,6 +159,24 @@ try {
     );
     assert.match(invalidToken, /\[FAIL\] Token readability:/);
     assert.match(invalidToken, /Summary: \d+ OK, \d+ WARN, 1 FAIL, \d+ SKIP/);
+    for (const validToken of [false, true]) {
+        const raw = run(
+            process.execPath,
+            [main, "--json", "doctor", "--check-token"],
+            {
+                env: { ...environment, BB_TOKEN: validToken ? "package-smoke-token" : "" },
+            },
+            validToken ? 0 : 1,
+        );
+        const result = JSON.parse(raw);
+        assert.equal(result.schemaVersion, 1);
+        assert.equal(result.command, "doctor");
+        assert.equal(result.ok, validToken);
+        assert.equal(result.exitCode, validToken ? 0 : 1);
+        assert.ok(Array.isArray(result.data.checks));
+        assert.equal(result.error?.code ?? null, validToken ? null : "DIAGNOSTIC_FAILED");
+        assert.doesNotMatch(raw, /package-smoke-token/);
+    }
     assert.match(
         run(process.execPath, [main, "merge-pr", "--help"], { env: environment }),
         /--complete-tasks/,
@@ -212,17 +236,25 @@ try {
         `;
         const args = [main, "get-pr-url", "feature/test", "develop"];
         if (manual) args.push("--project-key", "REMOTE", "--repository", "payments");
-        const result = run(
-            process.execPath,
-            ["--input-type=module", "--eval", repositoryCheck, ...args],
-            {
-                env: { ...environment, BB_TOKEN: "package-smoke-token" },
-            },
-        );
-        assert.equal(
-            result.trim(),
-            "https://bitbucket.example/context/projects/REMOTE/repos/payments/pull-requests/42",
-        );
+        for (const json of [false, true]) {
+            const invocation = json ? [main, "--json", ...args.slice(1)] : args;
+            const result = run(
+                process.execPath,
+                ["--input-type=module", "--eval", repositoryCheck, ...invocation],
+                {
+                    env: { ...environment, BB_TOKEN: "package-smoke-token" },
+                },
+            );
+            const url =
+                "https://bitbucket.example/context/projects/REMOTE/repos/payments/pull-requests/42";
+            if (json) {
+                const payload = JSON.parse(result);
+                assert.equal(payload.schemaVersion, 1);
+                assert.equal(payload.ok, true);
+                assert.equal(payload.command, "get-pr-url");
+                assert.equal(payload.data.pullRequest.url, url);
+            } else assert.equal(result.trim(), url);
+        }
     }
     run(process.execPath, [main, "config", "bitbucket.sshHostnames", ""], { env: environment });
     assert.equal(
@@ -277,47 +309,78 @@ try {
             assert.deepEqual(requests, outcome === 'merge-rejected' || outcome === 'unconfirmed-merge'
                 ? ['GET','GET','POST'] : ['GET','GET','POST','DELETE']);
         `;
-        const result = spawnSync(
-            process.execPath,
-            [
-                "--input-type=module",
-                "--eval",
-                mergeCheck,
-                main,
-                "merge-pr",
-                "feature/test",
-                "develop",
-                "--project-key",
-                "REMOTE",
-                "--repository",
-                "payments",
-                "--delete-source",
-            ],
-            {
-                cwd: fixture,
-                env: { ...environment, BB_TOKEN: "package-smoke-token" },
-                encoding: "utf8",
-                windowsHide: true,
-                timeout: 15000,
-            },
-        );
-        assert.ifError(result.error);
-        assert.equal(result.status, outcome === "deleted" ? 0 : 1, result.stderr);
-        assert.doesNotMatch(result.stderr + result.stdout, /package-smoke-token|AssertionError/);
-        if (outcome === "merge-rejected" || outcome === "unconfirmed-merge") {
-            assert.equal(result.stdout, "");
-            assert.match(result.stderr, /Error:/);
-        } else {
-            assert.equal(
-                result.stdout.trim(),
-                "https://bitbucket.example/context/projects/REMOTE/repos/payments/pull-requests/42",
+        for (const json of [false, true]) {
+            const result = spawnSync(
+                process.execPath,
+                [
+                    "--input-type=module",
+                    "--eval",
+                    mergeCheck,
+                    main,
+                    ...(json ? ["--json"] : []),
+                    "merge-pr",
+                    "feature/test",
+                    "develop",
+                    "--project-key",
+                    "REMOTE",
+                    "--repository",
+                    "payments",
+                    "--delete-source",
+                ],
+                {
+                    cwd: fixture,
+                    env: { ...environment, BB_TOKEN: "package-smoke-token" },
+                    encoding: "utf8",
+                    windowsHide: true,
+                    timeout: 15000,
+                },
             );
-            if (outcome === "deleted") assert.equal(result.stderr, "");
-            else
-                assert.match(
-                    result.stderr,
-                    /was merged, but source branch deletion failed or could not be confirmed/,
+            assert.ifError(result.error);
+            assert.equal(result.status, outcome === "deleted" ? 0 : 1, result.stderr);
+            assert.doesNotMatch(
+                result.stderr + result.stdout,
+                /package-smoke-token|AssertionError/,
+            );
+            if (json) {
+                assert.equal(result.stderr, "");
+                const payload = JSON.parse(result.stdout);
+                assert.equal(payload.schemaVersion, 1);
+                assert.equal(payload.command, "merge-pr");
+                assert.equal(payload.ok, outcome === "deleted");
+                assert.equal(payload.exitCode, result.status);
+                assert.doesNotMatch(result.stdout, /Protected branch|Merge rejected/);
+                if (outcome === "deleted" || outcome === "deletion-rejected") {
+                    assert.equal(payload.data.pullRequest.state, "MERGED");
+                    assert.equal(
+                        payload.data.sourceDeletion,
+                        outcome === "deleted" ? "deleted" : "failed",
+                    );
+                    assert.equal(
+                        payload.error?.code ?? null,
+                        outcome === "deleted" ? null : "SOURCE_DELETION_FAILED",
+                    );
+                } else {
+                    assert.equal(payload.data, null);
+                    assert.equal(
+                        payload.error.code,
+                        outcome === "merge-rejected" ? "CONFLICT" : "APPLICATION_ERROR",
+                    );
+                }
+            } else if (outcome === "merge-rejected" || outcome === "unconfirmed-merge") {
+                assert.equal(result.stdout, "");
+                assert.match(result.stderr, /Error:/);
+            } else {
+                assert.equal(
+                    result.stdout.trim(),
+                    "https://bitbucket.example/context/projects/REMOTE/repos/payments/pull-requests/42",
                 );
+                if (outcome === "deleted") assert.equal(result.stderr, "");
+                else
+                    assert.match(
+                        result.stderr,
+                        /was merged, but source branch deletion failed or could not be confirmed/,
+                    );
+            }
         }
     }
     console.log("Package contents, production-only installation, and CLI smoke checks passed.");

@@ -56,6 +56,7 @@ try {
         "package.json",
         "package-lock.json",
         "README.md",
+        "docs/json-output.md",
         ".gitignore",
         "scripts/build.mjs",
     ]) {
@@ -115,6 +116,10 @@ try {
             ? join(prefix, "node_modules", "bb")
             : join(prefix, "lib", "node_modules", "bb");
     assert.ok(existsSync(join(installedPackage, "dist", "main.js")));
+    assert.equal(
+        readFileSync(join(installedPackage, "docs", "json-output.md"), "utf8"),
+        readFileSync(join(projectRoot, "docs", "json-output.md"), "utf8"),
+    );
     assert.equal(existsSync(join(installedPackage, "src")), false);
     for (const dependency of ["typescript", "prettier", "@types/node"]) {
         assert.equal(existsSync(join(installedPackage, "node_modules", dependency)), false);
