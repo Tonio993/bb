@@ -1,16 +1,14 @@
 import type { BitbucketApi } from "../bitbucket/bitbucket-client.ts";
 import type { BitbucketPullRequest } from "../bitbucket/bitbucket-types.ts";
+import { deleteBranch } from "../bitbucket/branches.ts";
+import type { DeleteBranchOptions } from "../bitbucket/branch-types.ts";
 import { getOpenPullRequest } from "../bitbucket/pull-request-search.ts";
 import {
     getPullRequestTask,
     getPullRequestTasks,
     resolvePullRequestTask,
 } from "../bitbucket/pull-request-tasks.ts";
-import type {
-    GetOpenPullRequestOptions,
-    MergePullRequestBody,
-    PullRequestIdentity,
-} from "../bitbucket/pull-request-types.ts";
+import type { MergePullRequestBody, PullRequestIdentity } from "../bitbucket/pull-request-types.ts";
 import {
     getPullRequest,
     getPullRequestCommitMessageSuggestion,
@@ -19,18 +17,20 @@ import {
 import { buildMergeCommitMessage } from "../pull-request/merge-commit-message.ts";
 import {
     assertPullRequestCanMerge,
+    assertSourceBranchCanBeDeleted,
+    assertMergedSourceMatches,
+    hasSamePullRequestBranches,
     shouldCompletePullRequestTask,
 } from "../pull-request/merge-validation.ts";
-
-export type MergeOpenPullRequestOptions = GetOpenPullRequestOptions & {
-    messagePrefix?: string;
-    completeTasks?: boolean;
-};
+import type {
+    MergeOpenPullRequestOptions,
+    MergeOpenPullRequestResult,
+} from "./merge-pull-request-types.ts";
 
 export async function mergeOpenPullRequest(
     client: BitbucketApi,
     options: MergeOpenPullRequestOptions,
-): Promise<BitbucketPullRequest> {
+): Promise<MergeOpenPullRequestResult> {
     const match = await getOpenPullRequest(client, options);
     if (!match) {
         throw new Error(
@@ -50,25 +50,34 @@ export async function mergeOpenPullRequest(
         throw new Error("Pull Request branches changed after discovery. Run the command again.");
     }
     assertPullRequestCanMerge(pullRequest);
+    if (options.deleteSource) assertSourceBranchCanBeDeleted(pullRequest);
 
     const identity: PullRequestIdentity = {
         projectKey: pullRequest.toRef.repository.project.key,
         repository: pullRequest.toRef.repository.slug,
         pullRequestId: pullRequest.id,
     };
-    let currentPullRequest = pullRequest;
+    let currentPullRequest: BitbucketPullRequest = pullRequest;
     if (options.completeTasks) {
         await completePullRequestTasks(client, identity);
         currentPullRequest = await getPullRequest(client, identity);
-        if (
-            currentPullRequest.fromRef.id !== pullRequest.fromRef.id ||
-            currentPullRequest.toRef.id !== pullRequest.toRef.id
-        ) {
+        if (!hasSamePullRequestBranches(pullRequest, currentPullRequest)) {
             throw new Error(
                 "Pull Request branches changed while completing tasks. Run the command again.",
             );
         }
         assertPullRequestCanMerge(currentPullRequest);
+    }
+
+    let sourceDeletion: DeleteBranchOptions | undefined;
+    if (options.deleteSource) {
+        assertSourceBranchCanBeDeleted(currentPullRequest);
+        sourceDeletion = {
+            projectKey: currentPullRequest.fromRef.repository.project.key,
+            repository: currentPullRequest.fromRef.repository.slug,
+            name: currentPullRequest.fromRef.id,
+            endPoint: currentPullRequest.fromRef.latestCommit,
+        };
     }
 
     const body: MergePullRequestBody = { version: currentPullRequest.version };
@@ -79,10 +88,24 @@ export async function mergeOpenPullRequest(
     }
 
     const merged = await mergePullRequest(client, identity, body);
-    if (merged.state !== "MERGED") {
+    if (merged.state !== "MERGED" || merged.id !== identity.pullRequestId) {
         throw new Error("Bitbucket did not confirm that the Pull Request was merged.");
     }
-    return merged;
+    if (!sourceDeletion) return { pullRequest: merged, sourceDeletion: "not-requested" };
+    try {
+        assertMergedSourceMatches(currentPullRequest, merged);
+        await deleteBranch(client, sourceDeletion);
+        return { pullRequest: merged, sourceDeletion: "deleted" };
+    } catch (error) {
+        return {
+            pullRequest: merged,
+            sourceDeletion: "failed",
+            error:
+                error instanceof Error
+                    ? error
+                    : new Error("Unable to confirm source branch deletion."),
+        };
+    }
 }
 
 async function completePullRequestTasks(

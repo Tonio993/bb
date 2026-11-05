@@ -38,6 +38,23 @@ function invalidResponse(error: unknown): boolean {
     return true;
 }
 
+test("Pull Request refs expose the optional latest commit", async (t) => {
+    const f = api(t, { ...pr, fromRef: { ...pr.fromRef, latestCommit: "a".repeat(40) } });
+    const result = await getPullRequest(f.client, identity);
+    assert.equal(result.fromRef.latestCommit, "a".repeat(40));
+    assert.equal(result.toRef.latestCommit, undefined);
+});
+
+for (const latestCommit of [null, 42, "", " "]) {
+    test(
+        "Pull Request refs reject an invalid latest commit: " + JSON.stringify(latestCommit),
+        async (t) => {
+            const f = api(t, { ...pr, fromRef: { ...pr.fromRef, latestCommit } });
+            await assert.rejects(getPullRequest(f.client, identity), invalidResponse);
+        },
+    );
+}
+
 test("REST operations URL encode opaque project and repository identifiers independently of discovery", async (t) => {
     const identifiers = { projectKey: "OTHER PROJECT/", repository: "payments & accounts" };
     const expected =

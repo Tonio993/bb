@@ -46,6 +46,9 @@ function parseRef(value: unknown): BitbucketPullRequestRef {
         ...ref,
         id: text(ref.id, "Pull Request branch ref"),
         displayId: text(ref.displayId, "Pull Request branch display ID"),
+        ...(ref.latestCommit === undefined
+            ? {}
+            : { latestCommit: text(ref.latestCommit, "Pull Request branch commit") }),
         repository: parseRepository(ref.repository),
     };
 }

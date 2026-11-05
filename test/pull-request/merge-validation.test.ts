@@ -6,8 +6,65 @@ import { buildMergeCommitMessage } from "../../src/pull-request/merge-commit-mes
 import { assertPullRequestReview } from "../../src/pull-request/review-validation.ts";
 import {
     assertPullRequestCanMerge,
+    assertSourceBranchCanBeDeleted,
+    assertMergedSourceMatches,
     shouldCompletePullRequestTask,
 } from "../../src/pull-request/merge-validation.ts";
+
+function sourceDeletionFixture() {
+    const repository = { name: "Payments", slug: "payments", project: { key: "PROJECT" } };
+    return {
+        fromRef: {
+            id: "refs/heads/feature/test",
+            displayId: "feature/test",
+            repository,
+            latestCommit: "a".repeat(40),
+        },
+        toRef: { id: "refs/heads/develop", displayId: "develop", repository },
+    };
+}
+
+test("source deletion requires a branch and a full commit while allowing fork repositories", () => {
+    const pr = sourceDeletionFixture();
+    pr.fromRef.repository = { name: "Fork", slug: "fork", project: { key: "~jane" } };
+    assert.doesNotThrow(() => assertSourceBranchCanBeDeleted(pr));
+});
+
+for (const commit of ["", "abc123", "not-a-commit", "a".repeat(41)]) {
+    test("source deletion rejects an invalid commit: " + commit, () => {
+        const pr = sourceDeletionFixture();
+        pr.fromRef.latestCommit = commit;
+        assert.throws(() => assertSourceBranchCanBeDeleted(pr), /full source commit/);
+    });
+}
+
+test("the target branch cannot be selected for deletion", () => {
+    const pr = sourceDeletionFixture();
+    pr.fromRef.id = pr.toRef.id;
+    assert.throws(() => assertSourceBranchCanBeDeleted(pr), /target branch cannot be deleted/);
+});
+
+for (const field of [
+    "source ref",
+    "source repository",
+    "source commit",
+    "target ref",
+    "target repository",
+] as const) {
+    test("source deletion requires matching merge metadata: " + field, () => {
+        const expected = sourceDeletionFixture();
+        const merged = structuredClone(expected);
+        if (field === "source ref") merged.fromRef.id = "refs/heads/another";
+        if (field === "source repository") merged.fromRef.repository.slug = "another";
+        if (field === "source commit") merged.fromRef.latestCommit = "b".repeat(40);
+        if (field === "target ref") merged.toRef.id = "refs/heads/another";
+        if (field === "target repository") merged.toRef.repository.project.key = "ANOTHER";
+        assert.throws(
+            () => assertMergedSourceMatches(expected, merged),
+            /did not confirm the expected/,
+        );
+    });
+}
 
 for (const statuses of [[], ["APPROVED"], ["APPROVED", "UNAPPROVED"]]) {
     test(`review statuses ${JSON.stringify(statuses)} allow merging`, () => {

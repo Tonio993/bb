@@ -99,6 +99,7 @@ for (const command of [
             }
         }
         if (command[0] === "merge-pr") {
+            assert.ok(stdout.includes("--delete-source"));
             assert.ok(stdout.includes("--complete-tasks"));
             assert.ok(stdout.includes("--message-prefix"));
         }

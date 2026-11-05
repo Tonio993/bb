@@ -43,7 +43,7 @@ Privilegiare leggibilità, semplicità, riutilizzabilità, testabilità, basso b
 - Token fuori da `config.json`, mai in command line, output o diagnostiche. Nessun fallback persistente in chiaro.
 - L'autenticazione Git usa soltanto l'environment del processo figlio e preserva le impostazioni `GIT_CONFIG_*` esistenti.
 - Non avviare processi, leggere token o invocare Git quando il dato non serve o è già disponibile.
-- Usare API Bitbucket Data Center sotto `/rest/api/latest/`, mai endpoint Cloud.
+- Usare API Bitbucket Data Center sotto `/rest/api/latest/`; per la cancellazione condizionata dei branch usare `/rest/branch-utils/latest/`. Mai endpoint Cloud.
 - Preservare paginazione, output, exit code, risoluzione dei branch, reviewer e merge check descritti in README e architettura.
 - Nessun retry automatico delle scritture REST. Il completamento opzionale dei task non aggira reviewer o merge check.
 - `package-lock.json` deve essere versionato; `node_modules/`, artefatti, cache, configurazioni personali e secret devono restare ignorati.

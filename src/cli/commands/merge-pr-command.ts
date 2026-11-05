@@ -12,6 +12,7 @@ type MergePrOptions = {
     repository?: string;
     messagePrefix?: string;
     completeTasks?: boolean;
+    deleteSource?: boolean;
 };
 
 export function registerMergePrCommand(program: Command, context: CommandContext): void {
@@ -29,6 +30,7 @@ export function registerMergePrCommand(program: Command, context: CommandContext
             "Prepend a prefix to Bitbucket's suggested merge commit message",
         )
         .option("--complete-tasks", "Complete all open Pull Request tasks before merging")
+        .option("--delete-source", "Delete the remote source branch after a confirmed merge")
         .addHelpText(
             "after",
             `
@@ -41,6 +43,7 @@ Examples:
   bb merge-pr feature/my-change develop --project-key PROJECT --repository payments
   bb merge-pr develop --message-prefix "[RELEASE] "
   bb merge-pr develop --complete-tasks
+  bb merge-pr develop --delete-source
   bb -C C:\\repository merge-pr develop
 `,
         )
@@ -64,13 +67,23 @@ Examples:
                         repository: options.repository,
                     },
                 );
-                const merged = await mergeOpenPullRequest(context.bitbucketClient, {
+                const result = await mergeOpenPullRequest(context.bitbucketClient, {
                     ...repository,
                     ...branches,
                     messagePrefix: options.messagePrefix,
                     completeTasks: options.completeTasks,
+                    deleteSource: options.deleteSource,
                 });
-                const url = merged.links.self[0]?.href;
+                const url = result.pullRequest.links.self[0]?.href;
+
+                if (result.sourceDeletion === "failed") {
+                    if (url) console.log(url);
+                    console.error(
+                        `Pull Request #${result.pullRequest.id} was merged, but source branch deletion failed or could not be confirmed: ${result.error.message} Check the branch state before retrying deletion.`,
+                    );
+                    process.exitCode = 1;
+                    return;
+                }
 
                 if (!url) {
                     throw new Error("Bitbucket did not provide the merged Pull Request URL.");

@@ -41,7 +41,7 @@ test("HTTP requests preserve the server context path and normalize boundary slas
     assert.equal(options?.body, undefined);
 });
 
-for (const method of ["post", "put"] as const) {
+for (const method of ["post", "put", "delete"] as const) {
     test(`${method.toUpperCase()} serializes Unicode JSON with the required content type`, async (t) => {
         const request = t.mock.fn<FetchImplementation>(async () => Response.json({ id: 42 }));
         const body = { title: "Payment €", description: "First line\nSecond line" };
@@ -61,6 +61,24 @@ test("DELETE handles a successful response with no content", async (t) => {
     const request = t.mock.fn<FetchImplementation>(async () => new Response(null, { status: 204 }));
     assert.equal(await createClient(request).delete(path), undefined);
     assert.equal(request.mock.calls[0].arguments[1]?.method, "DELETE");
+});
+
+test("DELETE preserves parser overloads with and without a JSON body", async (t) => {
+    const request = t.mock.fn<FetchImplementation>(async () => Response.json({ count: 2 }));
+    const parse = (value: unknown): number => {
+        assert.deepEqual(value, { count: 2 });
+        return 2;
+    };
+    assert.equal(await createClient(request).delete(path, parse), 2);
+    assert.equal(request.mock.calls[0].arguments[1]?.body, undefined);
+    assert.equal(
+        await createClient(request).delete(path, { name: "refs/heads/feature/test" }, parse),
+        2,
+    );
+    assert.equal(
+        request.mock.calls[1].arguments[1]?.body,
+        JSON.stringify({ name: "refs/heads/feature/test" }),
+    );
 });
 
 for (const status of [400, 401, 403, 404, 409, 503]) {

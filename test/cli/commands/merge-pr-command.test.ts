@@ -35,7 +35,12 @@ function createFixture(t: TestContext) {
         version: 7,
         state: "OPEN",
         reviewers: [],
-        fromRef: { id: "refs/heads/feature/current", displayId: "feature/current", repository },
+        fromRef: {
+            id: "refs/heads/feature/current",
+            displayId: "feature/current",
+            repository,
+            latestCommit: "a".repeat(40),
+        },
         toRef: { id: "refs/heads/develop", displayId: "develop", repository },
         links: {
             self: [
@@ -63,7 +68,8 @@ function createFixture(t: TestContext) {
             isLastPage: true,
         },
     ];
-    const failures = { merge: 0, suggestion: 0 };
+    const failures = { merge: 0, suggestion: 0, deletion: 0 };
+    const deletion = { error: undefined as Error | undefined, unexpectedBody: false };
     const taskPages: BitbucketPage<BitbucketPullRequestTask>[] = [
         {
             values: [],
@@ -122,6 +128,17 @@ function createFixture(t: TestContext) {
                 }
             }
 
+            if (method === "DELETE" && url.pathname.includes("/rest/branch-utils/latest/")) {
+                if (deletion.error) throw deletion.error;
+                if (failures.deletion)
+                    return Response.json(
+                        { errors: [{ message: "Source branch deletion was rejected." }] },
+                        { status: failures.deletion },
+                    );
+                return deletion.unexpectedBody
+                    ? Response.json({ message: "unexpected" })
+                    : new Response(null, { status: 204 });
+            }
             if (method === "POST" && url.pathname.endsWith("/42/merge")) {
                 return failures.merge
                     ? Response.json(
@@ -161,6 +178,11 @@ function createFixture(t: TestContext) {
     });
     const git = createGitStub({ currentBranch, remoteFetchUrl, run: runGit, fetch: fetchGit });
     const output = t.mock.method(console, "log", () => {});
+    const errors = t.mock.method(console, "error", () => {});
+    const previousExitCode = process.exitCode;
+    t.after(() => {
+        process.exitCode = previousExitCode;
+    });
     const context: CommandContext = {
         get doctor(): never {
             throw new Error("Doctor must remain lazy.");
@@ -186,8 +208,10 @@ function createFixture(t: TestContext) {
         suggestion,
         pages,
         failures,
+        deletion,
         requests,
         output,
+        errors,
         refreshed,
         taskPages,
         taskDetails,
@@ -202,6 +226,234 @@ function createFixture(t: TestContext) {
 }
 
 const basePath = "/bitbucket/rest/api/latest/projects/PROJECT/repos/payments/pull-requests";
+
+test("--delete-source deletes only after a confirmed merge and prints the PR URL", async (t) => {
+    const f = createFixture(t);
+    await f.run(["develop", "--delete-source"]);
+    assert.deepEqual(
+        f.requests.map(({ method }) => method),
+        ["GET", "GET", "POST", "DELETE"],
+    );
+    assert.deepEqual(f.requests.at(-1), {
+        path: "/bitbucket/rest/branch-utils/latest/projects/PROJECT/repos/payments/branches",
+        method: "DELETE",
+        body: { name: "refs/heads/feature/current", endPoint: "a".repeat(40), dryRun: false },
+    });
+    assert.deepEqual(
+        f.output.mock.calls.map(({ arguments: args }) => args),
+        [[f.merged.links.self[0].href]],
+    );
+    assert.equal(f.errors.mock.callCount(), 0);
+    assert.equal(f.runGit.mock.callCount(), 0);
+    assert.equal(f.fetchGit.mock.callCount(), 0);
+});
+
+test("source deletion uses the PR source repository for a fork", async (t) => {
+    const f = createFixture(t);
+    f.current.fromRef.repository = {
+        name: "Fork",
+        slug: "fork-payments",
+        project: { key: "~jane" },
+    };
+    await f.run(["develop", "--delete-source"]);
+    assert.equal(
+        f.requests.at(-1)!.path,
+        "/bitbucket/rest/branch-utils/latest/projects/~jane/repos/fork-payments/branches",
+    );
+    assert.equal(f.requests.at(-2)!.path, `${basePath}/42/merge`);
+});
+
+for (const commit of [undefined, "abc123"]) {
+    test(
+        "unsafe deletion metadata prevents merge and task writes: " + JSON.stringify(commit),
+        async (t) => {
+            const f = createFixture(t);
+            f.current.fromRef.latestCommit = commit;
+            await assert.rejects(
+                f.run(["develop", "--delete-source", "--complete-tasks"]),
+                /full source commit/,
+            );
+            assert.deepEqual(
+                f.requests.map(({ method }) => method),
+                ["GET", "GET"],
+            );
+        },
+    );
+}
+
+test("an unconfirmed merge never triggers source deletion", async (t) => {
+    const f = createFixture(t);
+    f.merged.state = "OPEN";
+    await assert.rejects(f.run(["develop", "--delete-source"]), /did not confirm.*merged/);
+    assert.equal(
+        f.requests.some(({ method }) => method === "DELETE"),
+        false,
+    );
+    assert.equal(f.output.mock.callCount(), 0);
+});
+
+test("a response for a different PR cannot confirm the merge for source deletion", async (t) => {
+    const f = createFixture(t);
+    f.merged.id = 43;
+    await assert.rejects(f.run(["develop", "--delete-source"]), /did not confirm.*merged/);
+    assert.equal(
+        f.requests.some(({ method }) => method === "DELETE"),
+        false,
+    );
+    assert.equal(f.output.mock.callCount(), 0);
+});
+
+test("a merge rejection never triggers source deletion", async (t) => {
+    const f = createFixture(t);
+    f.failures.merge = 409;
+    await assert.rejects(f.run(["develop", "--delete-source"]), BitbucketApiError);
+    assert.equal(
+        f.requests.some(({ method }) => method === "DELETE"),
+        false,
+    );
+});
+
+test("review validation still blocks merge and source deletion", async (t) => {
+    const f = createFixture(t);
+    f.current.reviewers = [{ status: "NEEDS_WORK" }];
+    await assert.rejects(f.run(["develop", "--delete-source"]), /reviewer requested changes/);
+    assert.equal(
+        f.requests.some(({ method }) => method !== "GET"),
+        false,
+    );
+});
+
+for (const status of [400, 403, 404, 409, 503]) {
+    test(
+        "a rejected deletion reports partial success without repeating merge: HTTP " + status,
+        async (t) => {
+            const f = createFixture(t);
+            f.failures.deletion = status;
+            await f.run(["develop", "--delete-source"]);
+            assert.equal(process.exitCode, 1);
+            assert.deepEqual(
+                f.output.mock.calls.map(({ arguments: args }) => args),
+                [[f.merged.links.self[0].href]],
+            );
+            assert.equal(f.errors.mock.callCount(), 1);
+            assert.match(
+                String(f.errors.mock.calls[0].arguments[0]),
+                /was merged, but source branch deletion failed or could not be confirmed/,
+            );
+            assert.match(String(f.errors.mock.calls[0].arguments[0]), /Check the branch state/);
+            assert.equal(f.requests.filter(({ method }) => method === "POST").length, 1);
+            assert.equal(f.requests.filter(({ method }) => method === "DELETE").length, 1);
+        },
+    );
+}
+
+test("a deletion timeout is a partial success with an explicit recovery message", async (t) => {
+    const f = createFixture(t);
+    f.deletion.error = new BitbucketApiError("Deletion timed out.", {
+        kind: "timeout",
+        method: "DELETE",
+    });
+    await f.run(["develop", "--delete-source"]);
+    assert.equal(process.exitCode, 1);
+    assert.equal(f.output.mock.callCount(), 1);
+    assert.match(String(f.errors.mock.calls[0].arguments[0]), /was merged.*Deletion timed out/);
+    assert.equal(f.requests.filter(({ method }) => method === "DELETE").length, 1);
+});
+
+test("unexpected deletion JSON is not treated as successful cleanup", async (t) => {
+    const f = createFixture(t);
+    f.deletion.unexpectedBody = true;
+    await f.run(["develop", "--delete-source"]);
+    assert.equal(process.exitCode, 1);
+    assert.match(String(f.errors.mock.calls[0].arguments[0]), /Expected an empty response/);
+});
+
+test("changed merge metadata preserves the source branch and reports partial success", async (t) => {
+    const f = createFixture(t);
+    f.merged.fromRef = { ...f.current.fromRef, latestCommit: "b".repeat(40) };
+    await f.run(["develop", "--delete-source"]);
+    assert.equal(process.exitCode, 1);
+    assert.equal(
+        f.requests.some(({ method }) => method === "DELETE"),
+        false,
+    );
+    assert.equal(f.output.mock.callCount(), 1);
+    assert.match(String(f.errors.mock.calls[0].arguments[0]), /deletion was skipped/);
+});
+
+test("partial success remains explicit even when the merged PR has no URL", async (t) => {
+    const f = createFixture(t);
+    f.failures.deletion = 403;
+    f.merged.links = { self: [] };
+    await f.run(["develop", "--delete-source"]);
+    assert.equal(process.exitCode, 1);
+    assert.equal(f.output.mock.callCount(), 0);
+    assert.match(String(f.errors.mock.calls[0].arguments[0]), /Pull Request #42 was merged/);
+});
+
+test("task completion and message prefixes use the latest validated source commit for deletion", async (t) => {
+    const f = createFixture(t);
+    f.taskPages[0].values = [{ id: 101, version: 1, state: "OPEN", severity: "BLOCKER" }];
+    f.taskDetails.set(101, { id: 101, version: 1, state: "OPEN", severity: "BLOCKER" });
+    f.refreshed.fromRef.latestCommit = "b".repeat(40);
+    f.merged.fromRef = { ...f.current.fromRef, latestCommit: "b".repeat(40) };
+    await f.run([
+        "develop",
+        "--complete-tasks",
+        "--message-prefix",
+        "[RELEASE] ",
+        "--delete-source",
+    ]);
+    const methods = f.requests.map(({ method }) => method);
+    assert.ok(methods.indexOf("PUT") < methods.indexOf("POST"));
+    assert.equal(f.requests.at(-2)!.path, `${basePath}/42/merge`);
+    assert.deepEqual(f.requests.at(-2)!.body, {
+        version: 8,
+        message:
+            "[RELEASE] Pull request #42: validate payments\n\nMerge feature/current to develop",
+        autoSubject: false,
+    });
+    assert.deepEqual(f.requests.at(-1)!.body, {
+        name: "refs/heads/feature/current",
+        endPoint: "b".repeat(40),
+        dryRun: false,
+    });
+    assert.equal(f.errors.mock.callCount(), 0);
+});
+
+test("a changed source repository during tasks prevents merge and deletion", async (t) => {
+    const f = createFixture(t);
+    f.refreshed.fromRef.repository = { name: "Other", slug: "other", project: { key: "OTHER" } };
+    await assert.rejects(
+        f.run(["develop", "--complete-tasks", "--delete-source"]),
+        /branches changed while completing tasks/,
+    );
+    assert.equal(
+        f.requests.some(({ method }) => method === "POST" || method === "DELETE"),
+        false,
+    );
+});
+
+test("manual source deletion with explicit branches and identity does not initialize Git", async (t) => {
+    const f = createFixture(t);
+    delete f.config.bitbucket.projectKey;
+    Object.defineProperty(f.context, "gitClient", {
+        get() {
+            throw new Error("Git must remain lazy.");
+        },
+    });
+    await f.run([
+        "feature/current",
+        "develop",
+        "--project-key",
+        "PROJECT",
+        "--repository",
+        "payments",
+        "--delete-source",
+    ]);
+    assert.equal(f.requests.at(-1)!.method, "DELETE");
+    assert.equal(f.errors.mock.callCount(), 0);
+});
 
 test("manual merge with explicit branches and identity does not initialize Git", async (t) => {
     const fixture = createFixture(t);

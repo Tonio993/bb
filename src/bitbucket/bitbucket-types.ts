@@ -9,6 +9,7 @@ export type BitbucketRepository = {
 export type BitbucketPullRequestRef = {
     id: string;
     displayId: string;
+    latestCommit?: string;
     repository: BitbucketRepository;
 };
 

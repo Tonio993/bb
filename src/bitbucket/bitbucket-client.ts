@@ -9,7 +9,7 @@ export type FetchImplementation = (
     input: string | URL | Request,
     init?: RequestInit,
 ) => Promise<Response>;
-export type BitbucketApi = Pick<BitbucketClient, "get" | "post" | "put">;
+export type BitbucketApi = Pick<BitbucketClient, "get" | "post" | "put" | "delete">;
 
 type BitbucketClientOptions = {
     redirect?: RequestRedirect;
@@ -63,10 +63,14 @@ export class BitbucketClient {
         return this.request("PUT", path, body, parse);
     }
 
-    delete(path: string): Promise<unknown>;
     delete<T>(path: string, parse: ResponseParser<T>): Promise<T>;
-    delete(path: string, parse?: ResponseParser<unknown>): Promise<unknown> {
-        return this.request("DELETE", path, undefined, parse);
+    delete(path: string, body?: unknown): Promise<unknown>;
+    delete<T>(path: string, body: unknown, parse: ResponseParser<T>): Promise<T>;
+    delete(path: string, bodyOrParse?: unknown, parse?: ResponseParser<unknown>): Promise<unknown> {
+        if (typeof bodyOrParse === "function") {
+            return this.request("DELETE", path, undefined, bodyOrParse as ResponseParser<unknown>);
+        }
+        return this.request("DELETE", path, bodyOrParse, parse);
     }
 
     private async request(
