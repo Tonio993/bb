@@ -33,6 +33,7 @@ src/
     pull-request-output.ts
     pull-request-view-output.ts
     pull-request-check-output.ts
+    pull-request-preview-output.ts
     token-input.ts
     commands/
       index.ts
@@ -326,6 +327,16 @@ Dopo la risposta `MERGED`, il workflow confronta ref, repository e commit con la
 `MergeOpenPullRequestResult` contiene la PR mergiata e lo stato `sourceDeletion`: `not-requested`, `deleted` oppure `failed`, con `Error` originale nel terzo caso. Errori prima della conferma del merge vengono propagati; dopo la conferma, errori o incoerenze della cancellazione producono un risultato parziale. Il workflow non stampa e non imposta exit code. Il registrar stampa l'URL quando disponibile, segnala su stderr che il merge è riuscito ma la cancellazione è fallita o non confermata e imposta exit code `1`. In caso di successo completo mantiene l'output composto dal solo URL. Nessun processo Git o modifica del branch locale viene introdotto per la cancellazione.
 
 I test coprono trasporto DELETE con body e overload parser, endpoint branch-utils, metadati della PR, commit atteso, fork, protezioni, errori, timeout ed esiti parziali. `test:package` esegue anche il JavaScript installato per merge e cancellazione con risposte simulate: successo, cancellazione rifiutata, merge rifiutato e merge non confermato, verificando stdout, stderr, exit code e assenza di processi Git nel caso manuale.
+
+## Anteprime delle operazioni
+
+`--dry-run` è un'opzione Commander locale di `create-pr` e `merge-pr`, indipendente da `--json`. La creazione costruisce un unico `CreatePullRequestOptions` dopo il fetch, la validazione dei branch e la generazione dei contenuti; in anteprima lo restituisce senza accedere a `context.bitbucketClient`, altrimenti lo passa a `createPullRequest`. Questo conserva lazy il client REST, pur eseguendo davvero il fetch autenticato e aggiornando metadati Git locali.
+
+`previewOpenPullRequest` in `application/merge-pull-request.ts` riceve soltanto `Pick<BitbucketApi, "get">`. Condivide con l'esecuzione reale il caricamento/validazione della PR candidata, il piano di cancellazione source e il generatore privato dei task da completare. Il generatore raccoglie prima tutte le pagine, rilegge i task non risolti, controlla la corrispondenza dell'ID e applica `shouldCompletePullRequestTask`. Nel flusso reale ogni task selezionato viene risolto prima di passare al successivo; nell'anteprima i risultati vengono soltanto raccolti. Restano preservati ordine delle richieste e gestione dei completamenti parziali del workflow reale.
+
+L'anteprima legge sempre il suggerimento del messaggio, anche quando l'esecuzione reale senza prefisso lascerebbe a Bitbucket il default. Riusa `buildMergeCommitMessage`, indica modalità default/esplicita e non simula versioni successive o stato `MERGED`. Non interroga la mergeability e non sostituisce `pr checks`. Non esegue processi Git dopo la risoluzione degli input. Gli errori di lettura o validazione interrompono il piano senza scritture.
+
+`MergePullRequestPreview` è in `merge-pull-request-types.ts`; i DTO pubblici sono in `cli/json-output-types.ts`. `cli/pull-request-preview-output.ts` proietta il piano merge e formatta le anteprime testuali, mantenendo newline del contenuto e rimuovendo controlli terminale. JSON conserva il contenuto originale e non serializza response REST complete. I test dei comandi verificano opzioni combinate, assenza di scritture, credenziali/client lazy, paginazione e task concorrenti, errori e conservazione del comportamento reale. Il tarball installato verifica entrambe le anteprime in testo e JSON con Git e HTTP simulati.
 
 ## Build, distribuzione e verifica
 

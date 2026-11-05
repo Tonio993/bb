@@ -2,7 +2,7 @@
 
 `--json` è disponibile per `get-pr-url`, `get-pr-urls`, `create-pr`, `merge-pr`, `doctor`, `pr list`, `pr show` e `pr checks`. L'output testuale resta il default. L'opzione cambia la rappresentazione del risultato, non le operazioni eseguite: creazione, merge, completamento dei task e cancellazione del source restano scritture reali quando richieste.
 
-Questo documento è incluso nel pacchetto come `docs/json-output.md`, insieme alla versione della CLI cui si riferisce.
+Per `create-pr` e `merge-pr`, `--dry-run` abilita invece una vera anteprima senza scritture REST. `--json` da solo non la abilita. Questo documento è incluso nel pacchetto come `docs/json-output.md`, insieme alla versione della CLI cui si riferisce.
 
 Per script e CI specificare il formato all'inizio dell'invocazione:
 
@@ -103,6 +103,21 @@ Il nome canonico è `pr checks`. `pullRequest` usa la stessa proiezione di `pr s
 `readyForMerge` è vero soltanto se non ci sono `FAIL` e `SERVER_MERGE` è `PASS`. I task aperti producono `WARN`, lasciando al server l'applicazione delle proprie policy. Su PR chiuse `server` è `null`, il controllo server è `SKIP` e il requisito `PR_OPEN` fallisce. Un blocco conserva tutti i dati con `ok: false`, exit code `1` ed errore `MERGE_CHECK_FAILED`. HTTP, timeout, endpoint non disponibile e risposte incomplete producono invece il codice di errore ordinario con `data: null`; non sono interpretati come controlli superati.
 
 Si tratta di sole letture, separate nel tempo, senza garanzia sul merge successivo. Il comando non verifica preventivamente la cancellazione del branch e non sostituisce le validazioni di `merge-pr` o i merge check del server.
+
+## Anteprime di creazione e merge
+
+Con `--dry-run` i nomi canonici restano `create-pr` e `merge-pr` e l'envelope mantiene la versione `1`. Solo la forma di `data` per questa nuova opzione cambia; l'output delle operazioni reali resta invariato. Il successo indica che il piano è stato generato, non che l'operazione sia avvenuta o che i permessi di scrittura siano sufficienti. Gli errori seguono i codici esistenti e producono `data: null`.
+
+`create-pr --dry-run` restituisce `{ "dryRun": true, "plan": {...}, "git": { "remote": stringa, "fetchPerformed": true } }`. `plan` contiene `projectKey`, `repository`, `sourceBranch`, `targetBranch`, `title`, `description` (stringhe) e `reviewers` (array di login). Non contiene una PR creata né un URL inventato. Il fetch Git viene eseguito davvero e può leggere credenziali e aggiornare metadati locali; il client REST rimane lazy.
+
+`merge-pr --dry-run` restituisce `{ "dryRun": true, "pullRequest": PR, "plan": {...} }`. La PR usa la proiezione core documentata per il merge reale e conserva lo stato osservato `OPEN`. `plan` contiene:
+
+- `tasksToComplete`: array di `{ "id": numero, "version": numero, "text": stringa oppure null }`, letto e popolato soltanto con `--complete-tasks`. La versione è quella della rilettura del task, non una versione successiva simulata.
+- `message`: messaggio suggerito al momento della lettura, con l'eventuale prefisso.
+- `messageMode`: `server-default` senza prefisso non vuoto, `explicit` quando il messaggio prefissato sarebbe inviato esplicitamente. Il server potrà generare un messaggio diverso durante l'operazione reale.
+- `sourceDeletion`: `null` senza `--delete-source`, altrimenti `{ "projectKey": stringa, "repository": stringa, "ref": stringa, "expectedCommit": stringa, "afterConfirmedMerge": true }`. È un piano condizionato alla conferma del merge, non uno stato `deleted`.
+
+Le letture non sono atomiche; non vengono simulati aggiornamenti di versione, completamenti o cambiamenti di stato. L'anteprima merge riusa validazioni locali e selezione task del workflow reale, ma non interroga la mergeability: usare `pr checks` per i blocchi correnti del server. Nessuna anteprima esegue scritture REST o retry.
 
 ## Errori
 

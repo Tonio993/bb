@@ -9,7 +9,7 @@ Questo elenco conserva la numerazione concordata. Descrive le evoluzioni dell'ap
 | 3     | Output strutturato per script e CI: `--json`        | Implementata    |
 | 4     | Consultazione delle PR: `bb pr list` e `bb pr show` | Implementata    |
 | 5     | Verifica preventiva del merge: `bb pr checks`       | Implementata    |
-| 6     | Anteprima delle operazioni: `--dry-run`             | Da implementare |
+| 6     | Anteprima delle operazioni: `--dry-run`             | Implementata    |
 | 7     | Creazione PR più personalizzabile                   | Da implementare |
 | 8     | Release versionate e installazione stabile          | Da implementare |
 | 9     | Verifiche integrate contro ambienti reali           | Da completare   |
@@ -22,7 +22,7 @@ Questo elenco conserva la numerazione concordata. Descrive le evoluzioni dell'ap
 3. **JSON.** Formato versionato per ricerca, creazione, merge e diagnostica, con codici di errore documentati e output testuale predefinito. Il contratto è in [json-output.md](json-output.md).
 4. **Consultazione PR.** `pr list` e `pr show` espongono titolo, autore, branch, reviewer e task aperti, con filtri per repository, autore e stato e selezione tramite ID o URL. Supportano output testuale e JSON, con sole letture REST.
 5. **Controlli del merge.** `pr checks` riunisce requisiti locali, reviewer, task e motivazioni di blocco del server, con output testuale/JSON ed exit code per automazioni. Rimane da confermare il comportamento delle API sulla versione aziendale.
-6. **Anteprima.** Contenuto della creazione e piano del merge senza scritture REST, documentando letture remote ed eventuali fetch.
+6. **Anteprima.** `create-pr --dry-run` mostra contenuto e reviewer dopo il fetch Git; `merge-pr --dry-run` mostra PR, task da completare, messaggio e cancellazione source prevista con sole GET. Output testuale e JSON, senza scritture REST.
 7. **Creazione personalizzabile.** Descrizione da file, template, apertura facoltativa nel browser e rilevamento di PR già aperte.
 8. **Release.** Tag, tarball validati, checksum, changelog e `bb --version`, con installazione di versioni precise.
 9. **Ambienti reali.** Suite opzionale su un progetto Bitbucket di test e prove native Keychain/Secret Service. Le simulazioni offline e la matrice CI non sostituiscono queste verifiche.
@@ -30,4 +30,4 @@ Questo elenco conserva la numerazione concordata. Descrive le evoluzioni dell'ap
 11. **Prestazioni.** Concorrenza limitata tra repository, paginazione sequenziale interna e ordine deterministico; misurare i benefici prima di introdurre cache.
 12. **Più PR.** Ricerca, verifiche e successivi merge attraverso più repository, con esiti separati e successi parziali espliciti.
 
-L'opzione `merge-pr --delete-source` è stata implementata come estensione del merge e non cambia questa numerazione. Il prossimo punto della roadmap è il **6**.
+L'opzione `merge-pr --delete-source` è stata implementata come estensione del merge e non cambia questa numerazione. Il prossimo punto della roadmap è il **7**.

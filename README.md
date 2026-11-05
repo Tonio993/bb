@@ -423,6 +423,23 @@ Un errore della cancellazione non annulla il merge. In caso di esito parziale ve
 
 In caso di successo viene stampato soltanto l'URL della PR mergiata.
 
+### Anteprima con --dry-run
+
+```powershell
+bb create-pr feature/ABC-123 develop --dry-run
+bb --json create-pr develop --dry-run --reviewer mario
+bb merge-pr feature/ABC-123 develop --dry-run
+bb --json merge-pr develop --dry-run --complete-tasks --delete-source --message-prefix "[RELEASE] "
+```
+
+Dal checkout sostituire `bb` con `node src/main.ts`. `create-pr --dry-run` applica la stessa risoluzione di branch e repository e genera lo stesso titolo, descrizione e lista reviewer della creazione. Mantiene il fetch del remote configurato: può leggere il token per autenticare Git e aggiorna riferimenti remoti e metadati locali. Verifica i branch e legge i commit remoti, senza modificare il working tree e senza inizializzare il client REST Bitbucket. Non è quindi una modalità offline né una promessa di assenza di modifiche ai metadati Git.
+
+`merge-pr --dry-run` ricerca e rilegge la PR, applica le validazioni locali di stato, versione e reviewer e mostra il messaggio suggerito da Bitbucket. Con `--complete-tasks` raccoglie tutte le pagine prima di rileggere i task non risolti: elenca soltanto quelli ancora aperti e di tipo blocker. Senza l'opzione non legge task e la lista pianificata è vuota. Con `--delete-source` valida i dati del source e mostra repository, ref e commit atteso, indicando che la cancellazione avverrebbe solo dopo un merge confermato. Tutte le richieste sono GET: nessun completamento task, POST di merge o DELETE del branch. Non esegue fetch; Git serve soltanto a risolvere branch o repository se non sono già espliciti.
+
+Il messaggio mostrato è una previsione: senza prefisso il merge reale lascia a Bitbucket il messaggio predefinito; con un prefisso non vuoto invia il suggerimento prefissato come messaggio esplicito. Task, versione PR, commit e suggerimento possono cambiare prima dell'esecuzione reale. L'anteprima non interroga la mergeability: usare `bb pr checks <id-or-url>` per consultare i blocchi correnti del server. Anche un piano generato correttamente non garantisce permessi di scrittura, cancellazione del source o successo del merge.
+
+L'exit code è `0` se il piano è generato, `1` per errori di configurazione, Git, validazione o lettura remota. In JSON `data.dryRun` è `true` e `data.plan` contiene l'operazione prevista; nessuna PR viene indicata come creata o mergiata. Senza `--dry-run` gli output e le operazioni restano quelli esistenti.
+
 ## Output ed errori
 
 Per script e CI, ricerca, creazione, merge e diagnostica supportano `--json`:
