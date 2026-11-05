@@ -18,7 +18,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        # Keep macOS coverage on the Intel pool while hosted ARM64 capacity is constrained.
+        os: [ubuntu-latest, windows-latest, macos-26-intel]
     steps:
       - uses: actions/checkout@v6
         with:
