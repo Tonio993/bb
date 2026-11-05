@@ -97,7 +97,33 @@ Per scaricarlo:
 3. Estrarre lo ZIP scaricato: contiene `bb-<versione>.tgz`, installabile su Windows, Linux e macOS con Node.js 24 o successivo compatibile.
 4. Installare il tarball con `npm install --global "./bb-0.1.0.tgz" --omit=dev`, adattando il nome alla versione scaricata.
 
-Gli artifact sono conservati per 30 giorni. La generazione avviene anche sulle Pull Request e nelle esecuzioni manuali, dopo il successo dell'intera matrice. Non viene eseguito `npm publish` e non viene creata una release GitHub.
+Gli artifact sono conservati per 30 giorni. La generazione avviene anche sulle Pull Request e nelle esecuzioni manuali, dopo il successo dell'intera matrice. Su questi eventi non viene creata una release. I push di tag stabili usano invece il flusso seguente. Non viene eseguito `npm publish`.
+
+### Release versionate
+
+Il push di un tag `vX.Y.Z` avvia la stessa matrice di verifiche. Dopo il successo, la CI controlla che tag, `package.json`, versione del lockfile e sezione di [CHANGELOG.md](CHANGELOG.md) coincidano; genera un tarball e verifica proprio quel file con installazione offline e smoke test. Calcola quindi `SHA256SUMS` e prepara `release-notes.md` dalla sezione del changelog. Solo allora il job di release pubblica i tre asset su GitHub, ricontrollando il checksum prima dell'upload. Sono supportati tag di versioni stabili; tag incompleti, prerelease o versioni incoerenti interrompono il rilascio.
+
+L'installazione di una versione precisa usa l'asset `bb-<versione>.tgz`, che contiene il JavaScript compilato e Commander e non dipende dalla conservazione degli artifact CI. Non usare gli archivi automatici **Source code** di GitHub come pacchetti npm pronti. Esempio per `v0.1.0`, dopo la sua pubblicazione, con GitHub CLI autenticata se necessaria:
+
+```powershell
+gh release download v0.1.0 --repo Tonio993/bb --pattern "bb-0.1.0.tgz" --pattern SHA256SUMS
+$expectedHash = ((Get-Content ./SHA256SUMS -Raw).Trim() -split '\s+')[0]
+$actualHash = (Get-FileHash ./bb-0.1.0.tgz -Algorithm SHA256).Hash.ToLowerInvariant()
+if ($actualHash -ne $expectedHash) { throw "Checksum mismatch" }
+npm install --global "./bb-0.1.0.tgz" --omit=dev
+bb --version
+```
+
+Su Linux e macOS il checksum si verifica con `sha256sum --check SHA256SUMS` oppure `shasum -a 256 --check SHA256SUMS`. I requisiti del tarball restano Node.js 24 o successivo compatibile. L'installazione da Git può essere fissata allo stesso tag, conservando i requisiti npm e Git già documentati.
+
+Per preparare un nuovo rilascio:
+
+1. Aggiornare manifest e lockfile insieme, ad esempio con `npm version patch --no-git-tag-version`, e aggiungere una sezione `## [X.Y.Z]` non vuota al changelog.
+2. Eseguire `npm run check` e `npm run test:package`. Per provare anche la preparazione degli asset usare `npm run release:prepare -- vX.Y.Z`: genera e valida `out/release/bb-X.Y.Z.tgz`, checksum e note, senza creare tag o pubblicare. La directory `out/release` deve essere vuota; il comando non elimina artefatti preesistenti.
+3. Versionare e inviare le modifiche al repository, quindi creare e inviare un tag annotato con quella versione, ad esempio `git tag -a v0.1.1 -m "Release v0.1.1"` e `git push origin v0.1.1`.
+4. Controllare l'esito del workflow e gli asset nella pagina **Releases**. Una versione già pubblicata non viene sovrascritta automaticamente: eventuali correzioni richiedono una nuova versione.
+
+`bb --version` e `bb -V` leggono la versione dal manifest del checkout o del pacchetto installato, senza configurazione, token o Git. Come l'help, la versione resta testuale anche in presenza di `--json`. Il flusso è predisposto; la prima pubblicazione reale richiede il push esplicito del tag.
 
 ## Diagnostica locale
 

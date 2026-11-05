@@ -25,6 +25,7 @@ src/
   main.ts
   cli/
     cli.ts
+    version.ts
     command-context.ts
     doctor-report.ts
     json-output-types.ts
@@ -357,7 +358,7 @@ L'anteprima legge sempre il suggerimento del messaggio, anche quando l'esecuzion
 
 Durante lo sviluppo Node esegue TypeScript direttamente. Il build con `tsconfig.build.json` genera il JavaScript di distribuzione; `prepare` lo avvia e il launcher npm punta a `dist/main.js`. Lo stesso lifecycle copre `npm pack`, l'installazione da Git e `npm install`/`npm ci` nel checkout. Non affiancare un secondo hook `prepack` che esegua nuovamente il build. Il pacchetto è privato e supporta la distribuzione tramite tarball o installazione diretta da GitHub; `dist/` rimane ignorata da Git.
 
-L'allowlist del pacchetto comprende solo runtime JavaScript, manifest, README, contratto pubblico `docs/json-output.md` e Commander con licenza, incluso tramite `bundleDependencies`. `npm run test:package` verifica contenuti, installazione offline con cache vuota e dipendenze di produzione, launcher e configurazione fittizia. Entrambe le verifiche di installazione confrontano il contratto distribuito con quello del checkout. Prefisso e dati temporanei sono isolati e ripuliti, senza modificare l'installazione globale o la configurazione reale.
+L'allowlist del pacchetto comprende solo runtime JavaScript, manifest, README, CHANGELOG, contratto pubblico `docs/json-output.md` e Commander con licenza, incluso tramite `bundleDependencies`. `npm run test:package` verifica contenuti, installazione offline con cache vuota e dipendenze di produzione, launcher e configurazione fittizia. Può ricevere il percorso di un tarball esistente: in questo caso ne ispeziona i contenuti con `npm pack --dry-run --ignore-scripts --offline`, senza ricompilarlo, e installa esattamente quel file. Entrambe le verifiche di installazione confrontano il contratto distribuito con quello del checkout. Prefisso e dati temporanei sono isolati e ripuliti, senza modificare l'installazione globale o la configurazione reale.
 
 La verifica del pacchetto include help e rapporto di `doctor` installato, con token fittizio in `BB_TOKEN`, e controlla exit code `0` con avvisi e `1` con token vuoto. Verifica inoltre `--repository` e `--project-key` nell'help dei tre comandi PR, persistenza e azzeramento degli hostname SSH, e `get-pr-url` sul JavaScript installato senza progetto globale. La lettura Git è simulata per il remote SSH associato; la selezione manuale deve evitare ogni processo. Una GET simulata valida percorso REST, header e URL stampato. Non legge portachiavi personali né esegue verifiche remote. Le prove HTTP simulate coprono separatamente errori di connessione, timeout, accesso, parser e prerequisiti; le prove native del server aziendale restano esterne alla suite offline.
 
@@ -367,7 +368,13 @@ L'installazione diretta da Git richiede npm >=12.2.1 con Node.js >=24.15.0: npm 
 
 La suite nativa Node seleziona `test/**/*.test.ts`; gli helper non vengono eseguiti come suite. I test usano dipendenze sostituibili e mantengono le verifiche integrate della CLI. La CI in [.github/workflows/ci.yml](../.github/workflows/ci.yml) esegue formattazione, typecheck, suite e pacchetto su Node 24 in Windows, Linux e macOS; abilita inoltre il round trip DPAPI isolato su Windows.
 
-Il job `package` dipende dal successo dell'intera matrice `verify`. Su un checkout pulito Ubuntu installa le dipendenze con `npm ci` e genera `out/bb-<versione>.tgz` tramite `npm pack`, includendo build e Commander. `actions/upload-artifact` conserva soltanto i tarball per 30 giorni nell'artifact `bb-package-<commit SHA>`, senza eseguire `npm publish` o creare release. Il job usa gli stessi trigger della verifica, incluse Pull Request ed esecuzioni manuali.
+Il job `package` dipende dal successo dell'intera matrice `verify`. Su un checkout pulito Ubuntu installa le dipendenze con `npm ci` e, per main, Pull Request ed esecuzioni manuali, genera `out/bb-<versione>.tgz` tramite `npm pack`. I tag `v*` eseguono invece `release:prepare`; l'artifact `bb-package-<commit SHA>` conserva per 30 giorni i file di `out/`, compresi gli asset di release quando presenti. Non viene eseguito `npm publish`.
+
+`cli/version.ts` legge il manifest tramite un percorso relativo a `import.meta.url`, identico in `src/cli` e `dist/cli`. Commander gestisce `--version` e `-V` senza action: nessun accesso a configurazione, token, Git o cambiamento di directory. L'output resta testuale anche con JSON. I test verificano checkout, tarball e installazione da Git.
+
+`scripts/release-metadata.ts` valida tag stabile, manifest e versioni del lockfile, estraendo un'unica sezione non vuota da CHANGELOG. `scripts/prepare-release.mjs` richiede `out/release` vuota, esegue pack e verifica del file esistente, poi scrive checksum SHA-256 e note. Non crea tag né release. I test puri sono in `test/release/`; le prove integrate usano il pacchetto reale installato.
+
+Il job `release` dipende dal packaging e si attiva solo per tag, con `contents: write` limitato al job. Scarica gli asset della stessa esecuzione, ricontrolla il checksum e usa `gh release create --verify-tag --notes-file`, senza sovrascrivere automaticamente release esistenti. La versione resta univoca e non viene derivata dal numero di build. La pubblicazione su GitHub non è eseguibile nella suite locale: viene verificata al primo tag remoto. Il workflow conserva la matrice e la separazione dei permessi per PR e main.
 
 La cache del package manager in `actions/setup-node` è disabilitata esplicitamente in entrambi i job. Il ripristino della cache npm ha bloccato un'esecuzione prima di `npm ci`, con download a zero byte ed errore del servizio `Egress is over the account limit`. Le dipendenze vengono installate dal lockfile tramite il registry; la generazione del pacchetto non dipende dal ripristino della cache GitHub Actions.
 
