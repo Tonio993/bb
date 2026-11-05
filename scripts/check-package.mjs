@@ -1,6 +1,14 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import {
+    existsSync,
+    mkdirSync,
+    mkdtempSync,
+    readFileSync,
+    readdirSync,
+    rmSync,
+    writeFileSync,
+} from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -350,52 +358,102 @@ try {
         }
     }
     console.log("Checking creation previews in the installed JavaScript...");
-    for (const json of [false, true]) {
-        const createPreviewCheck = [
-            "import assert from 'node:assert/strict';",
-            "import cp from 'node:child_process';",
-            "import { syncBuiltinESMExports } from 'node:module';",
-            "const calls = [];",
-            "cp.spawnSync = (command, args) => {",
-            "assert.equal(command, 'git'); calls.push(args[0]);",
-            "assert.ok(['fetch','show-ref','log'].includes(args[0]));",
-            "return { status:0, stdout:args[0] === 'log' ? 'Validate payments\\x1eCheck account\\x1d' : '', stderr:'', signal:null }; };",
-            "syncBuiltinESMExports();",
-            "globalThis.fetch = async () => { throw new Error('Creation preview must not use REST.'); };",
-            "await import(" + JSON.stringify(pathToFileURL(main).href) + ");",
-            "assert.deepEqual(calls, ['fetch','show-ref','show-ref','log']);",
-        ].join("\n");
-        const raw = run(
-            process.execPath,
-            [
-                "--input-type=module",
-                "--eval",
-                createPreviewCheck,
-                main,
-                ...(json ? ["--json"] : []),
-                "create-pr",
-                "feature/test",
-                "develop",
-                "--project-key",
-                "REMOTE",
-                "--repository",
-                "payments",
-                "--dry-run",
-                "--reviewer",
-                "jane",
-            ],
-            { env: { ...environment, BB_TOKEN: "package-smoke-token" } },
-        );
-        assert.doesNotMatch(raw, /package-smoke-token/);
-        if (json) {
-            const result = JSON.parse(raw);
-            assert.equal(result.ok, true);
-            assert.equal(result.data.dryRun, true);
-            assert.equal(result.data.plan.title, "Validate payments");
-            assert.deepEqual(result.data.plan.reviewers, ["jane"]);
-            assert.equal(result.data.git.fetchPerformed, true);
-        } else assert.match(raw, /Dry run: no Pull Request was created/);
+    const templatePath = join(fixture, "pr-template.md");
+    writeFileSync(templatePath, "# {{title}}\n{{commits}}");
+    run(process.execPath, [main, "config", "bitbucket.descriptionTemplate", templatePath], {
+        env: environment,
+    });
+    assert.equal(
+        run(process.execPath, [main, "config", "bitbucket.descriptionTemplate"], {
+            env: environment,
+        }).trim(),
+        templatePath,
+    );
+    for (const mode of ["preview", "created", "existing", "browser-failed"]) {
+        for (const json of [false, true]) {
+            const createPreviewCheck = [
+                "import assert from 'node:assert/strict';",
+                "import cp from 'node:child_process';",
+                "import { syncBuiltinESMExports } from 'node:module';",
+                "const calls = [];",
+                "const mode = " + JSON.stringify(mode) + ";",
+                "let searches = 0; let writes = 0;",
+                "cp.execFile = (_command, _args, _options, callback) => callback(new Error('Browser unavailable.'));",
+                "cp.spawnSync = (command, args) => {",
+                "assert.equal(command, 'git'); calls.push(args[0]);",
+                "assert.ok(['fetch','show-ref','log'].includes(args[0]));",
+                "return { status:0, stdout:args[0] === 'log' ? 'Validate payments\\x1eCheck account\\x1d' : '', stderr:'', signal:null }; };",
+                "syncBuiltinESMExports();",
+                "const repository = { name:'Payments', slug:'payments', project:{ key:'REMOTE' } };",
+                "const pr = { id:42, version:0, state:'OPEN', reviewers:[], fromRef:{ id:'refs/heads/feature/test', displayId:'feature/test', repository }, toRef:{ id:'refs/heads/develop', displayId:'develop', repository }, links:{ self:[{ href:'https://bitbucket.example/context/projects/REMOTE/repos/payments/pull-requests/42' }] } };",
+                "globalThis.fetch = async (_input, init) => {",
+                "assert.notEqual(mode, 'preview', 'Creation preview must not use REST.');",
+                "if (init.method === 'GET') { searches++; const values = mode === 'existing' ? [pr] : []; return Response.json({ values, size:values.length, start:0, limit:100, isLastPage:true }); }",
+                "assert.equal(init.method, 'POST'); assert.notEqual(mode, 'existing'); writes++;",
+                "assert.equal(JSON.parse(init.body).description, '# Validate payments\\n* Validate payments\\n    * Check account');",
+                "return Response.json(pr, { status:201 }); };",
+                "await import(" + JSON.stringify(pathToFileURL(main).href) + ");",
+                "assert.deepEqual(calls, ['fetch','show-ref','show-ref','log']);",
+                "assert.equal(searches, mode === 'preview' ? 0 : 1);",
+                "assert.equal(writes, mode === 'preview' || mode === 'existing' ? 0 : 1);",
+            ].join("\n");
+            const raw = run(
+                process.execPath,
+                [
+                    "--input-type=module",
+                    "--eval",
+                    createPreviewCheck,
+                    main,
+                    ...(json ? ["--json"] : []),
+                    "create-pr",
+                    "feature/test",
+                    "develop",
+                    "--project-key",
+                    "REMOTE",
+                    "--repository",
+                    "payments",
+                    ...(mode === "preview"
+                        ? ["--dry-run", "--open"]
+                        : mode === "browser-failed"
+                          ? ["--open"]
+                          : []),
+                    "--reviewer",
+                    "jane",
+                ],
+                { env: { ...environment, BB_TOKEN: "package-smoke-token" } },
+                mode === "browser-failed" ? 1 : 0,
+            );
+            assert.doesNotMatch(raw, /package-smoke-token/);
+            if (json) {
+                const result = JSON.parse(raw);
+                assert.equal(result.ok, mode !== "browser-failed");
+                if (mode !== "preview") {
+                    assert.equal(result.data.created, mode !== "existing");
+                    assert.equal(result.data.pullRequest.id, 42);
+                    assert.equal(
+                        result.data.browser,
+                        mode === "browser-failed" ? "failed" : "not-requested",
+                    );
+                    assert.equal(
+                        result.error?.code,
+                        mode === "browser-failed" ? "BROWSER_OPEN_FAILED" : undefined,
+                    );
+                } else {
+                    assert.equal(result.data.dryRun, true);
+                    assert.equal(result.data.plan.title, "Validate payments");
+                    assert.deepEqual(result.data.plan.reviewers, ["jane"]);
+                    assert.equal(result.data.git.fetchPerformed, true);
+                    assert.match(result.data.plan.description, /# Validate payments/);
+                }
+            } else if (mode === "preview")
+                assert.match(raw, /Dry run: no Pull Request was created/);
+            else if (mode === "existing") assert.match(raw, /Existing Pull Request:/);
+            else assert.match(raw, /pull-requests\/42/);
+        }
     }
+    run(process.execPath, [main, "config", "bitbucket.descriptionTemplate", ""], {
+        env: environment,
+    });
     console.log("Checking source deletion after merge in the installed JavaScript...");
     for (const outcome of [
         "deleted",
