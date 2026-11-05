@@ -4,6 +4,8 @@ import { getOpenPullRequest } from "../../bitbucket/pull-request-search.ts";
 import { resolvePullRequestBranches } from "../../pull-request/branches.ts";
 import { resolveRepositoryContext } from "../../repository/repository-context.ts";
 import type { CommandContext } from "../command-context.ts";
+import { usesJsonOutput, writeJsonResult } from "../json-output.ts";
+import { toPullRequestOutput } from "../pull-request-output.ts";
 
 type GetPrUrlOptions = {
     sourceBranch?: string;
@@ -16,6 +18,7 @@ export function registerGetPrUrlCommand(program: Command, context: CommandContex
     program
         .command("get-pr-url")
         .description("Get the URL of an open Pull Request.")
+        .option("--json", "Output a versioned JSON result for scripts and CI")
         .argument("[source]", "Source branch, or target branch when used alone")
         .argument("[target]", "Target branch")
         .option("--source-branch <branch>", "Source branch")
@@ -39,8 +42,9 @@ Examples:
                 source: string | undefined,
                 target: string | undefined,
                 options: GetPrUrlOptions,
+                command: Command,
             ) => {
-                await executeGetPrUrl(source, target, options, context);
+                await executeGetPrUrl(source, target, options, context, usesJsonOutput(command));
             },
         );
 }
@@ -50,6 +54,7 @@ async function executeGetPrUrl(
     target: string | undefined,
     options: GetPrUrlOptions,
     context: CommandContext,
+    json: boolean,
 ): Promise<void> {
     const branches = resolvePullRequestBranches(
         source,
@@ -71,6 +76,7 @@ async function executeGetPrUrl(
     });
 
     if (!pullRequest) {
+        if (json) writeJsonResult("get-pr-url", { pullRequest: null });
         return;
     }
 
@@ -80,5 +86,6 @@ async function executeGetPrUrl(
         throw new Error("Bitbucket did not provide the Pull Request URL.");
     }
 
-    console.log(url);
+    if (json) writeJsonResult("get-pr-url", { pullRequest: toPullRequestOutput(pullRequest) });
+    else console.log(url);
 }

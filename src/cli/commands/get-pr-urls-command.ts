@@ -4,6 +4,8 @@ import { getOpenPullRequests } from "../../bitbucket/pull-request-search.ts";
 import { requireProjectKey } from "../../config/config-validation.ts";
 import { resolvePullRequestBranches } from "../../pull-request/branches.ts";
 import type { CommandContext } from "../command-context.ts";
+import { usesJsonOutput, writeJsonResult } from "../json-output.ts";
+import { toPullRequestOutput } from "../pull-request-output.ts";
 
 type GetPrUrlsOptions = {
     projectKey?: string;
@@ -14,6 +16,7 @@ export function registerGetPrUrlsCommand(program: Command, context: CommandConte
     program
         .command("get-pr-urls")
         .description("Get the URLs of open Pull Requests across project repositories.")
+        .option("--json", "Output a versioned JSON result for scripts and CI")
         .argument("<source>", "Source branch")
         .argument("<target>", "Target branch")
         .option("--project-key <key>", "Override the configured Bitbucket project")
@@ -31,9 +34,11 @@ Examples:
   bb get-pr-urls feature/ABC-123 develop --project-key PROJECT
 `,
         )
-        .action(async (source: string, target: string, options: GetPrUrlsOptions) => {
-            await executeGetPrUrls(source, target, options, context);
-        });
+        .action(
+            async (source: string, target: string, options: GetPrUrlsOptions, command: Command) => {
+                await executeGetPrUrls(source, target, options, context, usesJsonOutput(command));
+            },
+        );
 }
 
 async function executeGetPrUrls(
@@ -41,6 +46,7 @@ async function executeGetPrUrls(
     targetBranch: string,
     options: GetPrUrlsOptions,
     context: CommandContext,
+    json: boolean,
 ): Promise<void> {
     const branches = resolvePullRequestBranches(sourceBranch, targetBranch, () => {
         throw new Error("Source and target branches are required.");
@@ -65,6 +71,8 @@ async function executeGetPrUrls(
             );
         }
 
-        console.log(url);
+        if (!json) console.log(url);
     }
+    if (json)
+        writeJsonResult("get-pr-urls", { pullRequests: pullRequests.map(toPullRequestOutput) });
 }

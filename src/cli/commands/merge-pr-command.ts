@@ -4,6 +4,9 @@ import { mergeOpenPullRequest } from "../../application/merge-pull-request.ts";
 import { resolvePullRequestBranches } from "../../pull-request/branches.ts";
 import { resolveRepositoryContext } from "../../repository/repository-context.ts";
 import type { CommandContext } from "../command-context.ts";
+import { usesJsonOutput, writeJsonResult } from "../json-output.ts";
+import { toJsonError } from "../json-errors.ts";
+import { toPullRequestOutput } from "../pull-request-output.ts";
 
 type MergePrOptions = {
     sourceBranch?: string;
@@ -19,6 +22,7 @@ export function registerMergePrCommand(program: Command, context: CommandContext
     program
         .command("merge-pr")
         .description("Merge an open Pull Request through the Bitbucket REST API.")
+        .option("--json", "Output a versioned JSON result for scripts and CI")
         .argument("[source]", "Source branch, or target branch when used alone")
         .argument("[target]", "Target branch")
         .option("--source-branch <branch>", "Source branch")
@@ -52,6 +56,7 @@ Examples:
                 source: string | undefined,
                 target: string | undefined,
                 options: MergePrOptions,
+                command: Command,
             ) => {
                 const branches = resolvePullRequestBranches(
                     source,
@@ -75,6 +80,28 @@ Examples:
                     deleteSource: options.deleteSource,
                 });
                 const url = result.pullRequest.links.self[0]?.href;
+                if (!url && result.sourceDeletion !== "failed") {
+                    throw new Error("Bitbucket did not provide the merged Pull Request URL.");
+                }
+
+                if (usesJsonOutput(command)) {
+                    writeJsonResult(
+                        "merge-pr",
+                        {
+                            pullRequest: toPullRequestOutput(result.pullRequest),
+                            sourceDeletion: result.sourceDeletion,
+                        },
+                        result.sourceDeletion === "failed"
+                            ? {
+                                  code: "SOURCE_DELETION_FAILED",
+                                  message:
+                                      "The Pull Request was merged, but source branch deletion failed or could not be confirmed. Check the branch state before retrying deletion.",
+                                  cause: toJsonError(result.error),
+                              }
+                            : null,
+                    );
+                    return;
+                }
 
                 if (result.sourceDeletion === "failed") {
                     if (url) console.log(url);
@@ -83,10 +110,6 @@ Examples:
                     );
                     process.exitCode = 1;
                     return;
-                }
-
-                if (!url) {
-                    throw new Error("Bitbucket did not provide the merged Pull Request URL.");
                 }
 
                 console.log(url);

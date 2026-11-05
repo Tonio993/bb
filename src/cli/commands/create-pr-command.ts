@@ -7,6 +7,8 @@ import { buildPullRequestContent } from "../../pull-request/pull-request-content
 import { resolvePullRequestReviewers } from "../../pull-request/reviewers.ts";
 import { resolveRepositoryContext } from "../../repository/repository-context.ts";
 import type { CommandContext } from "../command-context.ts";
+import { usesJsonOutput, writeJsonResult } from "../json-output.ts";
+import { toPullRequestOutput } from "../pull-request-output.ts";
 
 type CreatePrOptions = {
     sourceBranch?: string;
@@ -22,6 +24,7 @@ export function registerCreatePrCommand(program: Command, context: CommandContex
     program
         .command("create-pr")
         .description("Create a Pull Request on Bitbucket.")
+        .option("--json", "Output a versioned JSON result for scripts and CI")
         .argument("[source]", "Source branch, or target branch when used alone")
         .argument("[target]", "Target branch")
         .option("--source-branch <branch>", "Source branch")
@@ -61,8 +64,9 @@ Examples:
                 source: string | undefined,
                 target: string | undefined,
                 options: CreatePrOptions,
+                command: Command,
             ) => {
-                await executeCreatePr(source, target, options, context);
+                await executeCreatePr(source, target, options, context, usesJsonOutput(command));
             },
         );
 }
@@ -72,6 +76,7 @@ async function executeCreatePr(
     target: string | undefined,
     options: CreatePrOptions,
     context: CommandContext,
+    json: boolean,
 ): Promise<void> {
     const branches = resolvePullRequestBranches(
         source,
@@ -133,7 +138,8 @@ async function executeCreatePr(
         throw new Error("Bitbucket did not provide the created Pull Request URL.");
     }
 
-    console.log(url);
+    if (json) writeJsonResult("create-pr", { pullRequest: toPullRequestOutput(pullRequest) });
+    else console.log(url);
 }
 
 function collectReviewer(value: string, previous: string[]): string[] {
