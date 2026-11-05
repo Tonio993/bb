@@ -170,13 +170,14 @@ node src/main.ts config bitbucket.sshHostnames "ssh.bitbucket.company.com,bb-int
 node src/main.ts config git.remote "origin"
 ```
 
-| Impostazione                 | Obbligatoria | Valore predefinito          |
-| ---------------------------- | ------------ | --------------------------- |
-| `bitbucket.url`              | Sì           | Nessuno                     |
-| `bitbucket.projectKey`       | No           | Nessuno                     |
-| `bitbucket.defaultReviewers` | No           | Nessun reviewer             |
-| `bitbucket.sshHostnames`     | No           | Nessun hostname alternativo |
-| `git.remote`                 | No           | `origin`                    |
+| Impostazione                    | Obbligatoria | Valore predefinito          |
+| ------------------------------- | ------------ | --------------------------- |
+| `bitbucket.url`                 | Sì           | Nessuno                     |
+| `bitbucket.projectKey`          | No           | Nessuno                     |
+| `bitbucket.defaultReviewers`    | No           | Nessun reviewer             |
+| `bitbucket.sshHostnames`        | No           | Nessun hostname alternativo |
+| `git.remote`                    | No           | `origin`                    |
+| `bitbucket.descriptionTemplate` | No           | Nessun template             |
 
 `bitbucket.url` può includere il context path del server, ad esempio `https://bitbucket.company.com/bitbucket`.
 
@@ -385,6 +386,38 @@ Con un solo commit, il titolo è il suo subject; con più commit, è il nome del
 Senza opzioni vengono usati i reviewer configurati. `--reviewer` sostituisce i default e accetta valori ripetuti o separati da virgole. `--no-reviewers` li disabilita e non può essere combinato con `--reviewer`.
 
 In caso di successo viene stampato soltanto l'URL della PR creata.
+
+### Descrizioni personalizzate e PR esistenti
+
+```powershell
+bb create-pr develop --description-file ./description.md
+bb create-pr develop --template ./pr-template.md --dry-run
+bb config bitbucket.descriptionTemplate "./templates/pr.md"
+bb create-pr develop --no-template
+bb create-pr develop --open
+```
+
+`--description-file` usa il testo UTF-8 letterale, senza sostituzioni. `--template` legge invece un template UTF-8; le due opzioni sono incompatibili. Il file esplicito ha precedenza sul template globale `bitbucket.descriptionTemplate`. `--no-template` disabilita il template; in assenza di personalizzazioni resta la descrizione generata dai commit. Un file mancante, illeggibile o non UTF-8 produce un errore senza fallback.
+
+I template supportano `{{title}}`, `{{sourceBranch}}`, `{{targetBranch}}`, `{{projectKey}}`, `{{repository}}` e `{{commits}}`. Il titolo rispetta `--title`; `{{commits}}` inserisce la lista Markdown generata dai commit. Le sostituzioni avvengono una sola volta, senza eseguire codice né interpretare segnaposti nei valori inseriti. Nomi non supportati producono un errore. Esempio:
+
+```markdown
+# {{title}}
+
+Da {{sourceBranch}} a {{targetBranch}} in {{projectKey}}/{{repository}}.
+
+## Modifiche
+
+{{commits}}
+```
+
+I percorsi CLI sono relativi alla directory operativa, compreso l'eventuale `-C`. `bb config bitbucket.descriptionTemplate <path>` salva un percorso assoluto risolto dalla directory corrente; un valore vuoto elimina l'impostazione opzionale. Il file viene letto a ogni creazione o anteprima, senza copiarne il contenuto nella configurazione. Nel JSON scritto manualmente il percorso deve essere assoluto. `config init` conserva il template senza aggiungere domande.
+
+Dopo fetch, validazione dei branch e preparazione del contenuto, la creazione cerca una PR `OPEN` con gli stessi ref e repository source/target, seguendo la paginazione. I fork con branch omonimi sono distinti. Se trova una corrispondenza, evita il POST e stampa `Existing Pull Request: <URL>`; in JSON restituisce `created: false`. Una nuova PR conserva l'output composto dall'URL e ha `created: true`. Gli errori della ricerca interrompono il flusso. La finestra di concorrenza fra ricerca e POST rimane: i conflitti del server vengono propagati, senza retry automatici delle scritture.
+
+`--open` lancia il gestore URL del sistema per la PR creata o esistente, senza una shell. Il successo conferma il lancio, non il caricamento della pagina. Un fallimento conserva URL e PR con exit code `1`; non ripetere la creazione per correggere il solo browser. Linux richiede `xdg-open` e una sessione grafica. L'apertura nativa resta da verificare nei singoli ambienti: i test usano esecutori simulati.
+
+`--dry-run` applica file e template al piano, mantiene il fetch Git, non cerca duplicati via REST e non apre il browser neppure con `--open`. Il piano non conferma l'assenza di una PR equivalente. Dal checkout sostituire `bb` con `node src/main.ts`.
 
 ### Merge di Pull Request
 

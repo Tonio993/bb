@@ -35,6 +35,7 @@ src/
     pull-request-check-output.ts
     pull-request-preview-output.ts
     token-input.ts
+    description-input.ts
     commands/
       index.ts
       config-command.ts
@@ -47,6 +48,7 @@ src/
       merge-pr-command.ts
       pr-command.ts
   application/
+    create-pull-request.ts
     doctor/
       run-doctor.ts
       local-diagnostics.ts
@@ -62,6 +64,8 @@ src/
   diagnostics/
     executable.ts
     npm-version.ts
+  browser/
+    open-url.ts
   auth/
     token-store.ts
     token-backend.ts
@@ -105,6 +109,7 @@ src/
     branches.ts
     reviewers.ts
     pull-request-content.ts
+    description-template.ts
     review-validation.ts
     merge-validation.ts
     merge-checks.ts
@@ -291,6 +296,16 @@ Con un solo branch posizionale, il source è quello corrente e il target è l'ar
 `buildPullRequestContent(commits, sourceBranch)` è pura, accetta dati readonly e non modifica input né invoca Git. Con un solo commit usa il subject come titolo, altrimenti il source branch. La descrizione resta una lista Markdown anche per un solo commit, con il body annidato e `&nbsp;` fra i commit. Un confronto vuoto produce un errore che conserva i riferimenti source e target.
 
 I reviewer configurati sono il default. `--reviewer` ripetibile o separato da virgole li sostituisce; `--no-reviewers` li disabilita. Le due opzioni sono incompatibili. La semantica Commander `options.reviewers === false` è mantenuta.
+
+## Personalizzazione della creazione
+
+`cli/description-input.ts` legge file UTF-8 con decoder rigoroso: il file esplicito è letterale, il template CLI precede quello globale e `--no-template` disabilita la sorgente configurata. `pull-request/description-template.ts` resta puro e sostituisce una sola volta i valori noti, senza valutare codice o riesaminare contenuti inseriti. `CreatePullRequestOptions` preparato dal registrar è condiviso fra anteprima e creazione reale. Gli errori di file non producono fallback.
+
+`bitbucket.descriptionTemplate` è un percorso opzionale. Il setter lo rende assoluto rispetto alla directory operativa; stringa vuota lo elimina. I file JSON manuali richiedono un percorso assoluto. La validazione non legge il file; il contenuto viene letto soltanto per la creazione o anteprima. `config init` conserva l'impostazione senza nuove domande.
+
+`application/create-pull-request.ts` coordina la ricerca preventiva e un solo eventuale POST, restituendo PR e booleano `created`. La ricerca paginata riusa `getOpenPullRequest` con filtro opzionale sull'identità del source, mantenendo invariati i chiamanti esistenti. Per la creazione, ref, stato aperto e identità source/target devono coincidere; un fork omonimo non è un duplicato. La ricerca avviene dopo la preparazione del piano Git; errori REST interrompono il flusso senza creazione. La finestra di concorrenza fra ricerca e POST rimane: nessun retry delle scritture o recupero automatico dopo conflitti. `--dry-run` evita questa ricerca per conservare il client REST lazy.
+
+`browser/open-url.ts` avvia il gestore URL tramite argomenti e senza shell: `rundll32.exe` su Windows, `open` su macOS e `xdg-open` su Linux. Accetta soltanto URL HTTP(S) privi di credenziali e controlli. `main.ts` compone l'opener tramite il contratto opzionale `CommandContext.openUrl`; i test possono ometterlo finché l'apertura non viene richiesta. Il registrar passa la proiezione pubblica del link, priva di userinfo, query e fragment. L'opzione `--open` è ignorata in anteprima. Un fallimento del lancio mantiene la PR disponibile e restituisce `BROWSER_OPEN_FAILED`, senza serializzare errori nativi o ritentare creazioni. I test del dispatcher e del tarball sostituiscono i processi: non aprono browser reali e non attestano la disponibilità delle sessioni grafiche native.
 
 ## Verifica preventiva del merge
 

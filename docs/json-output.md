@@ -51,7 +51,7 @@ Campi aggiuntivi compatibili potranno essere introdotti nella versione 1; i cons
 | ------------- | -------------------------------------------------------------------------------------------------------------- |
 | `get-pr-url`  | `{ "pullRequest": PR oppure null }`                                                                            |
 | `get-pr-urls` | `{ "pullRequests": [PR, ...] }`                                                                                |
-| `create-pr`   | `{ "pullRequest": PR }`                                                                                        |
+| `create-pr`   | `{ "pullRequest": PR, "created": boolean, "browser": stato }`                                                  |
 | `merge-pr`    | `{ "pullRequest": PR, "sourceDeletion": stato }`                                                               |
 | `doctor`      | `{ "checks": [...], "summary": { "OK": n, "WARN": n, "FAIL": n, "SKIP": n } }`                                 |
 | `pr list`     | `{ "pullRequests": [PR consultabile, ...] }`                                                                   |
@@ -93,6 +93,14 @@ I nomi canonici nell'envelope sono `pr list` e `pr show`. La lista vuota è un s
 `sourceDeletion` vale `not-requested`, `deleted` oppure `failed`. Nel terzo caso il merge è confermato: `data.pullRequest.state` è `MERGED`, `ok` è `false`, l'exit code è `1` e l'errore è `SOURCE_DELETION_FAILED`. Non ripetere automaticamente il merge per correggere la sola cancellazione.
 
 I controlli di `doctor` hanno `name`, `status` e `message`; gli stati sono `OK`, `WARN`, `FAIL`, `SKIP`. Un `FAIL` produce `DIAGNOSTIC_FAILED` con rapporto e conteggi preservati. Soltanto avvisi e controlli saltati non causano un errore. JSON non abilita nuove letture di credenziali o richieste remote: valgono sempre `--check-token` e `--remote`.
+
+## Creazione personalizzabile e duplicati
+
+Senza `--dry-run`, `create-pr` aggiunge i campi compatibili `created` e `browser`. `created: true` indica un POST riuscito; `created: false` una PR aperta trovata con gli stessi ref e repository source/target, senza POST. `browser` vale `not-requested`, `opened` o `failed`; `opened` conferma soltanto il lancio del gestore URL del sistema. La proiezione `pullRequest` rimane quella core e non contiene descrizione o response REST complete.
+
+Un fallimento del browser conserva PR, `created` e `browser: "failed"` in `data`, con `ok: false`, exit code `1` ed errore `BROWSER_OPEN_FAILED`. Non ripetere la creazione per correggere il browser. Gli errori di ricerca o POST restano errori ordinari con dati null; nessun retry automatico. La ricerca preventiva non elimina la finestra di concorrenza prima del POST.
+
+File e template cambiano il contenuto inviato o `data.plan.description` nell'anteprima. I segnaposti sono documentati nel README. In `--dry-run` non si cercano duplicati via REST e non si apre il browser: il piano non simula una PR creata o esistente.
 
 ## Verifica preventiva: pr checks
 
@@ -139,6 +147,7 @@ Le letture non sono atomiche; non vengono simulati aggiornamenti di versione, co
 | `GIT_ERROR`               | Operazione Git locale fallita.                                                          |
 | `DIAGNOSTIC_FAILED`       | Almeno un controllo di `doctor` è `FAIL`.                                               |
 | `MERGE_CHECK_FAILED`      | Requisiti del merge non soddisfatti; rapporto disponibile in `data`.                    |
+| `BROWSER_OPEN_FAILED`     | PR disponibile, lancio del browser fallito; risultato conservato in data.               |
 | `SOURCE_DELETION_FAILED`  | Merge confermato, cancellazione source fallita o non confermata.                        |
 
 Ogni errore ha `code` e `message`. Quando disponibili, gli errori Bitbucket aggiungono `httpStatus`, `method` e `kind`; quelli Git aggiungono `gitExitCode` e `signal`. `SOURCE_DELETION_FAILED` include in `cause` l'errore filtrato della cancellazione. Non vengono esposti corpo HTTP, header, argomenti Git, stack, cause native o messaggi nativi. Gli errori generici non includono il messaggio originale: per una diagnostica testuale più dettagliata usare il comando senza `--json`.
