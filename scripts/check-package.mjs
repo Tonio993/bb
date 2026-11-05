@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 
 const projectRoot = resolve(import.meta.dirname, "..");
 const npmCli = process.env.npm_execpath;
@@ -127,6 +128,11 @@ try {
     assert.match(help, /doctor/);
 
     const main = join(installedPackage, "dist", "main.js");
+    for (const command of ["get-pr-url", "create-pr", "merge-pr"]) {
+        const commandHelp = run(process.execPath, [main, command, "--help"], { env: environment });
+        assert.match(commandHelp, /--repository <slug>/);
+        assert.match(commandHelp, /--project-key <key>/);
+    }
     const doctorHelp = run(process.execPath, [main, "doctor", "--help"], { env: environment });
     assert.match(doctorHelp, /--check-token/);
     assert.match(doctorHelp, /--remote/);
@@ -159,6 +165,70 @@ try {
     assert.equal(
         run(process.execPath, [main, "config", "git.remote"], { env: environment }).trim(),
         "origin",
+    );
+    console.log("Checking repository discovery in the installed JavaScript...");
+    run(process.execPath, [main, "config", "bitbucket.url", "https://bitbucket.example/context"], {
+        env: environment,
+    });
+    run(process.execPath, [main, "config", "bitbucket.sshHostnames", "SSH-GATEWAY,ssh-gateway"], {
+        env: environment,
+    });
+    const settings = run(process.execPath, [main, "config", "list"], { env: environment });
+    assert.match(settings, /bitbucket.projectKey = <not configured>/);
+    assert.match(settings, /bitbucket.sshHostnames = ssh-gateway/);
+    for (const manual of [false, true]) {
+        const repositoryCheck = `
+            import assert from 'node:assert/strict';
+            import cp from 'node:child_process';
+            import { syncBuiltinESMExports } from 'node:module';
+            let gitCalls = 0;
+            let requests = 0;
+            cp.spawnSync = (command, args) => {
+                assert.equal(${manual}, false, 'Manual selection must not start processes.');
+                assert.equal(command, 'git');
+                assert.deepEqual(args, ['remote', 'get-url', '--', 'origin']);
+                gitCalls++;
+                return { status:0, stdout:'git@ssh-gateway:REMOTE/payments.git', stderr:'', signal:null };
+            };
+            syncBuiltinESMExports();
+            const repository = { name:'Payments', slug:'payments', project:{ key:'REMOTE' } };
+            const url = 'https://bitbucket.example/context/projects/REMOTE/repos/payments/pull-requests/42';
+            globalThis.fetch = async (input, init) => {
+                requests++;
+                assert.equal(String(input), 'https://bitbucket.example/context/rest/api/latest/projects/REMOTE/repos/payments/pull-requests?state=OPEN&start=0&limit=100');
+                assert.equal(init.method, 'GET');
+                assert.equal(new Headers(init.headers).get('Authorization'), 'Bearer package-smoke-token');
+                return Response.json({ size:1, limit:100, start:0, isLastPage:true, values:[{
+                    id:42, version:0, state:'OPEN', reviewers:[],
+                    fromRef:{ id:'refs/heads/feature/test', displayId:'feature/test', repository },
+                    toRef:{ id:'refs/heads/develop', displayId:'develop', repository },
+                    links:{ self:[{ href:url }] }
+                }] });
+            };
+            await import(${JSON.stringify(pathToFileURL(main).href)});
+            assert.equal(gitCalls, ${manual ? 0 : 1});
+            assert.equal(requests, 1);
+        `;
+        const args = [main, "get-pr-url", "feature/test", "develop"];
+        if (manual) args.push("--project-key", "REMOTE", "--repository", "payments");
+        const result = run(
+            process.execPath,
+            ["--input-type=module", "--eval", repositoryCheck, ...args],
+            {
+                env: { ...environment, BB_TOKEN: "package-smoke-token" },
+            },
+        );
+        assert.equal(
+            result.trim(),
+            "https://bitbucket.example/context/projects/REMOTE/repos/payments/pull-requests/42",
+        );
+    }
+    run(process.execPath, [main, "config", "bitbucket.sshHostnames", ""], { env: environment });
+    assert.equal(
+        run(process.execPath, [main, "config", "bitbucket.sshHostnames"], {
+            env: environment,
+        }).trim(),
+        "",
     );
     console.log("Package contents, production-only installation, and CLI smoke checks passed.");
 } finally {
