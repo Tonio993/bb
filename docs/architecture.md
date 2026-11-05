@@ -27,6 +27,10 @@ src/
     cli.ts
     command-context.ts
     doctor-report.ts
+    json-output-types.ts
+    json-output.ts
+    json-errors.ts
+    pull-request-output.ts
     token-input.ts
     commands/
       index.ts
@@ -131,13 +135,25 @@ Ogni comando si registra con `register...Command(program, context)`. L'elenco de
 
 `-C` / `--path` prima del comando cambia temporaneamente la directory. Il cleanup la ripristina anche dopo help o errori. Dopo `bb git`, gli argomenti appartengono invece a Git: `bb git -C ...` deve inoltrare l'opzione senza interpretarla.
 
-L'help esplicito termina con successo; parsing e errori applicativi producono una diagnostica su stderr ed exit code 1. Il pass-through propaga l'exit code Git. Help, configurazione e operazioni locali non devono inizializzare servizi Bitbucket o recuperare token.
+L'help esplicito termina con successo; in modalità testuale parsing e errori applicativi producono una diagnostica su stderr ed exit code 1. Il pass-through propaga l'exit code Git. Help, configurazione e operazioni locali non devono inizializzare servizi Bitbucket o recuperare token.
+
+## Output JSON
+
+Il contratto pubblico versionato è in [json-output.md](json-output.md); la numerazione delle evolutive è conservata in [roadmap.md](roadmap.md). Il formato è opt-in tramite `--json` globale prima del comando oppure locale sui cinque comandi supportati: `get-pr-url`, `get-pr-urls`, `create-pr`, `merge-pr` e `doctor`. Le opzioni locali sono dichiarate nei rispettivi registrar. Commander resta responsabile del parsing: non si cercano flag nell'array degli argomenti e non si aggiunge routing sui nomi dei comandi.
+
+`json-output-types.ts` definisce envelope, codici di errore e proiezione delle PR. `json-output.ts` legge gli option values di Commander, ricava il nome canonico dai parent e scrive un solo documento su stdout, impostando exit code `0` o `1`. `pull-request-output.ts` proietta solo metadati PR documentati: nessuna serializzazione diretta delle response REST. I link vengono limitati a HTTP(S), senza userinfo, query o fragment, con `null` per link non disponibili o non validi. Le identità source e target restano distinte per supportare i fork.
+
+`runCli` consulta esclusivamente lo stato delle opzioni nei Command per selezionare il formato anche in caso di errore. Configura `writeErr` prima di registrare i comandi, così i figli ereditano la soppressione delle diagnostiche testuali quando JSON è già attivo. Il catch tratta gli errori JSON e restituisce un risultato con dati null; in modalità testuale propaga gli errori al gestore esistente di `main.ts`. Il ripristino della directory e il cleanup del token restano attivi. L'help esplicito resta testuale. Il `preAction` rifiuta JSON sui comandi che non dichiarano l'opzione, prima di modificare directory o inizializzare dipendenze. Il pass-through Git mantiene tutti gli argomenti successivi al proprio comando.
+
+`json-errors.ts` traduce `CommanderError`, `BitbucketApiError` e `GitCommandError` in codici e messaggi controllati, conservando soltanto status, metodo, kind ed exit code/segnale Git quando disponibili. Non analizza messaggi per classificare errori e non serializza testo nativo, corpi HTTP, path, argomenti Git, stack o cause native. Gli errori generici hanno un codice e un messaggio fissi. `SOURCE_DELETION_FAILED` conserva la PR mergiata e una causa filtrata; `DIAGNOSTIC_FAILED` conserva i controlli e i conteggi di doctor. La modalità JSON non introduce nuove letture, processi o retry.
+
+`test/cli/json-output.test.ts` verifica i cinque comandi, modalità globale/locale, risultati vuoti, errori, segreti aggiuntivi nelle response, successi parziali e isolamento del pass-through. `json-bootstrap.test.ts` verifica il processo reale, stdout/stderr, exit code, diagnostica, credenziali lazy e cleanup. Il pacchetto installato viene verificato in entrambi i formati per ricerca, merge e relativi esiti parziali, oltre a doctor con credenziali fittizie.
 
 ## Diagnostica locale
 
 `doctor` riceve tramite `CommandContext.doctor` una funzione asincrona composta in `main.ts`. `application/doctor/run-doctor.ts` coordina i controlli; `application/doctor/local-diagnostics.ts` verifica versione Node, provider delle versioni npm/Git e store di configurazione. `CommandContext.doctor` restituisce sempre una `Promise<DoctorCheck[]>`; gli stub dei test rispettano lo stesso contratto. I moduli applicativi restituiscono risultati senza stampare né impostare exit code. Il registrar attende i risultati e si occupa di output ed exit code: `1` con almeno un `FAIL`, altrimenti `0`. File assente, chiavi obbligatorie mancanti o strumenti non adatti all'installazione Git producono `WARN`; runtime incompatibile, strumenti non eseguibili e configurazione non valida producono `FAIL`.
 
-`application/doctor/doctor-types.ts` contiene il contratto condiviso di risultati, stati e opzioni, separato dai controlli locali. `cli/doctor-report.ts` è una funzione pura che mantiene l'ordine dei controlli, conta `OK`, `WARN`, `FAIL`, `SKIP`, aggiunge il riepilogo finale e calcola l'exit code. Il registrar stampa il rapporto su stdout e applica sempre quel codice; gli errori Commander restano su stderr. Un controllo saltato non viene contato come successo. L'help espone le regole anche senza inizializzare dipendenze.
+`application/doctor/doctor-types.ts` contiene il contratto condiviso di risultati, stati e opzioni, separato dai controlli locali. `cli/doctor-report.ts` contiene le funzioni pure per conteggi condivisi e rapporto testuale: mantiene l'ordine dei controlli, conta `OK`, `WARN`, `FAIL`, `SKIP`, aggiunge il riepilogo finale e calcola l'exit code. Il registrar stampa il rapporto su stdout e applica sempre quel codice; con `--json` emette invece controlli e conteggi nell'envelope versionato. Gli errori Commander sono testuali su stderr per default e strutturati su stdout quando JSON è già attivo. Un controllo saltato non viene contato come successo. L'help espone le regole anche senza inizializzare dipendenze.
 
 La versione Node proviene dal processo corrente. `diagnostics/npm-version.ts` esegue soltanto `npm --version`, con timeout di 10 secondi, limite di output di 64 KiB e `BB_TOKEN` rimosso dall'environment utile del figlio. Su Windows usa `cmd.exe /d /s /c` con comando fisso per avviare il launcher npm; sulle altre piattaforme esegue npm direttamente. La versione Git passa da `GitClient.version()`, con timeout di 10 secondi e senza autenticazione o letture della configurazione. Il client diagnostico è indipendente dal client dei comandi Git per funzionare anche con un file di configurazione danneggiato.
 
@@ -285,7 +301,7 @@ I test coprono trasporto DELETE con body e overload parser, endpoint branch-util
 
 Durante lo sviluppo Node esegue TypeScript direttamente. Il build con `tsconfig.build.json` genera il JavaScript di distribuzione; `prepare` lo avvia e il launcher npm punta a `dist/main.js`. Lo stesso lifecycle copre `npm pack`, l'installazione da Git e `npm install`/`npm ci` nel checkout. Non affiancare un secondo hook `prepack` che esegua nuovamente il build. Il pacchetto è privato e supporta la distribuzione tramite tarball o installazione diretta da GitHub; `dist/` rimane ignorata da Git.
 
-L'allowlist del pacchetto comprende solo runtime JavaScript, manifest, README e Commander con licenza, incluso tramite `bundleDependencies`. `npm run test:package` verifica contenuti, installazione offline con cache vuota e dipendenze di produzione, launcher e configurazione fittizia. Prefisso e dati temporanei sono isolati e ripuliti, senza modificare l'installazione globale o la configurazione reale.
+L'allowlist del pacchetto comprende solo runtime JavaScript, manifest, README, contratto pubblico `docs/json-output.md` e Commander con licenza, incluso tramite `bundleDependencies`. `npm run test:package` verifica contenuti, installazione offline con cache vuota e dipendenze di produzione, launcher e configurazione fittizia. Entrambe le verifiche di installazione confrontano il contratto distribuito con quello del checkout. Prefisso e dati temporanei sono isolati e ripuliti, senza modificare l'installazione globale o la configurazione reale.
 
 La verifica del pacchetto include help e rapporto di `doctor` installato, con token fittizio in `BB_TOKEN`, e controlla exit code `0` con avvisi e `1` con token vuoto. Verifica inoltre `--repository` e `--project-key` nell'help dei tre comandi PR, persistenza e azzeramento degli hostname SSH, e `get-pr-url` sul JavaScript installato senza progetto globale. La lettura Git è simulata per il remote SSH associato; la selezione manuale deve evitare ogni processo. Una GET simulata valida percorso REST, header e URL stampato. Non legge portachiavi personali né esegue verifiche remote. Le prove HTTP simulate coprono separatamente errori di connessione, timeout, accesso, parser e prerequisiti; le prove native del server aziendale restano esterne alla suite offline.
 

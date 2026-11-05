@@ -4,6 +4,8 @@ CLI interna per Git e Bitbucket Data Center / Server, sviluppata in Node.js e Ty
 
 Il progetto implementa configurazione globale, pass-through Git, ricerca, creazione e merge delle Pull Request. Le API utilizzate sono quelle di Bitbucket Data Center, sotto `/rest/api/latest/` e `/rest/branch-utils/latest/` per la cancellazione condizionata dei branch.
 
+La numerazione delle evolutive e il relativo stato sono in [docs/roadmap.md](docs/roadmap.md).
+
 ## Requisiti e avvio
 
 - Node.js 24 LTS o una versione successiva compatibile.
@@ -387,7 +389,23 @@ In caso di successo viene stampato soltanto l'URL della PR mergiata.
 
 ## Output ed errori
 
-L'help esplicito termina con exit code `0`. Gli errori di parsing o applicativi terminano con exit code `1` e un messaggio su stderr. L'invocazione senza comando mostra l'help su stderr con exit code `1`.
+Per script e CI, ricerca, creazione, merge e diagnostica supportano `--json`:
+
+```powershell
+node src/main.ts --json get-pr-url feature/ABC-123 develop
+node src/main.ts --json get-pr-urls feature/ABC-123 develop --project-key PROJECT
+node src/main.ts --json create-pr feature/ABC-123 develop
+node src/main.ts --json merge-pr feature/ABC-123 develop --delete-source
+node src/main.ts --json doctor --remote
+```
+
+Con il pacchetto installato usare `bb` al posto di `node src/main.ts`. Il risultato è un solo documento su stdout con `schemaVersion`, `command`, `ok`, `exitCode`, `data` ed `error`; stderr resta vuoto. L'output testuale rimane il default. Le ricerche vuote restituiscono `pullRequest: null` o `pullRequests: []`, con esito positivo. Un errore di `doctor` conserva controlli e conteggi; un errore della sola cancellazione source conserva la PR `MERGED` con `sourceDeletion: "failed"` e codice `SOURCE_DELETION_FAILED`.
+
+Posizionare `--json` per primo permette di ottenere il formato anche per gli errori di sintassi successivi. È supportata anche la forma locale, per esempio `bb doctor --json`, ma un errore che interrompe il parsing prima di leggere l'opzione mantiene il formato testuale. L'help esplicito resta testuale. `config`, `token` e il pass-through `git` non supportano JSON: il flag globale viene rifiutato prima di eseguire operazioni. Dopo `bb git`, `--json` resta un argomento Git.
+
+Il contratto completo, i campi PR, i codici di errore e un esempio PowerShell sono in [docs/json-output.md](docs/json-output.md). Il formato JSON non abilita anteprime e non modifica letture, scritture o retry; verificare lo stato del server prima di ripetere una scrittura fallita o non confermata.
+
+In modalità testuale l'help esplicito termina con exit code `0`. Gli errori di parsing o applicativi terminano con exit code `1` e un messaggio su stderr. L'invocazione senza comando mostra l'help su stderr con exit code `1`.
 
 Il pass-through `git` propaga l'exit code del processo Git. Le PR non trovate dai comandi di ricerca producono un risultato vuoto con exit code `0`; `merge-pr` richiede invece una PR esistente.
 
@@ -411,7 +429,7 @@ Le prove di discovery eseguono Git reale in repository temporanei, escludendo co
 
 I comandi dipendono da contratti strutturali ottenuti con `Pick`, così i test possono fornire semplici oggetti con i metodi necessari. I test di `BitbucketClient` iniettano `fetch` nelle opzioni del costruttore; quelli di `GitClient` iniettano `execute` nel quarto argomento opzionale, senza sostituire le funzioni globali di rete o processo. In esecuzione normale i client usano le API native Node. `npm test` seleziona `test/**/*.test.ts` ed esclude gli helper condivisi dalla scoperta delle suite.
 
-La verifica del pacchetto installabile è separata e si avvia con `npm run test:package`. Include help delle opzioni repository e `--delete-source`, lettura e scrittura della configurazione SSH e ricerca PR sul JavaScript installato senza progetto globale, sia da remote simulato sia con identità manuale fuori dal checkout. Verifica inoltre merge e cancellazione del source di un fork, con successo completo, esito parziale, merge rifiutato e merge non confermato, controllando ordine delle richieste, output ed exit code. Non contatta Bitbucket né usa portachiavi personali.
+La verifica del pacchetto installabile è separata e si avvia con `npm run test:package`. Include help delle opzioni repository, `--delete-source` e `--json`, lettura e scrittura della configurazione SSH e ricerca PR sul JavaScript installato senza progetto globale, sia da remote simulato sia con identità manuale fuori dal checkout. Verifica inoltre merge e cancellazione del source di un fork, con successo completo, esito parziale, merge rifiutato e merge non confermato, controllando ordine delle richieste, output ed exit code in formato testuale e JSON. `doctor` viene verificato anche in JSON con credenziale fittizia valida e non valida. Non contatta Bitbucket né usa portachiavi personali.
 
 `npm run test:git` verifica l'installazione da un repository Git temporaneo senza `dist/` né `node_modules/`, usando un prefisso isolato. La prova richiede npm >=12.2.1, scarica le dipendenze di build dal registry npm, verifica il launcher e l'assenza delle dipendenze di sviluppo nel pacchetto installato. È separata dalla suite offline e viene eseguita nella matrice CI su tutte e tre le piattaforme. Per eseguirla con la versione npm fissata dalla CI senza aggiornare l'installazione globale usare `npm exec --yes --package=npm@12.2.1 -- npm run test:git`.
 

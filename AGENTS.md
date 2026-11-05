@@ -7,6 +7,8 @@ Il repository reale è la fonte di verità sullo stato dell'implementazione.
 
 - [README.md](README.md): utilizzo, installazione, limiti e verifiche operative.
 - [docs/architecture.md](docs/architecture.md): responsabilità dei moduli e invarianti da preservare.
+- [docs/roadmap.md](docs/roadmap.md): evolutive concordate e relativa numerazione.
+- [docs/json-output.md](docs/json-output.md): contratto JSON versionato per script e CI.
 
 Prima di modificare un'area, leggere la relativa sezione del documento architetturale e ispezionare codice e test attuali. Non assumere che un esempio documentale coincida con l'implementazione.
 
