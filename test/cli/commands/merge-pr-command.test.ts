@@ -227,6 +227,138 @@ function createFixture(t: TestContext) {
 
 const basePath = "/bitbucket/rest/api/latest/projects/PROJECT/repos/payments/pull-requests";
 
+for (const dryRun of [false, true]) {
+    test("mismatching task identity prevents writes, dryRun=" + dryRun, async (t) => {
+        const f = createFixture(t);
+        const task = { id: 101, version: 0, state: "OPEN", severity: "BLOCKER" };
+        f.taskPages[0].values = [task];
+        f.taskDetails.set(101, { ...task, id: 999 });
+        await assert.rejects(
+            f.run(["develop", "--complete-tasks", ...(dryRun ? ["--dry-run"] : [])]),
+            /different Pull Request task identity/,
+        );
+        assert.ok(f.requests.every((request) => request.method === "GET"));
+        assert.equal(f.output.mock.callCount(), 0);
+    });
+}
+
+for (const json of [false, true]) {
+    for (const completeTasks of [false, true]) {
+        test(
+            "merge dry-run uses only GETs, json=" + json + ", completeTasks=" + completeTasks,
+            async (t) => {
+                const f = createFixture(t);
+                const open = {
+                    id: 101,
+                    version: 2,
+                    state: "OPEN",
+                    severity: "BLOCKER",
+                    text: "Fix tests",
+                };
+                f.taskPages[0].values = [open, { ...open, id: 102, state: "RESOLVED" }];
+                f.taskDetails.set(101, open);
+                f.current.fromRef.repository = {
+                    name: "Fork",
+                    slug: "fork",
+                    project: { key: "FORK" },
+                };
+                Object.defineProperty(f.context, "gitClient", {
+                    get() {
+                        throw new Error("Explicit merge must not initialize Git.");
+                    },
+                });
+                await f.run([
+                    "feature/current",
+                    "develop",
+                    "--project-key",
+                    "PROJECT",
+                    "--repository",
+                    "payments",
+                    "--dry-run",
+                    "--delete-source",
+                    ...(completeTasks ? ["--complete-tasks"] : []),
+                    ...(json ? ["--json"] : []),
+                ]);
+                assert.ok(f.requests.every((request) => request.method === "GET"));
+                assert.equal(f.requests.at(-1)?.path, basePath + "/42/commit-message-suggestion");
+                assert.equal(f.requests.length, completeTasks ? 5 : 3);
+                assert.equal(open.state, "OPEN");
+                const raw = String(f.output.mock.calls[0].arguments[0]);
+                if (json) {
+                    const result = JSON.parse(raw);
+                    assert.equal(result.ok, true);
+                    assert.equal(result.data.dryRun, true);
+                    assert.equal(result.data.pullRequest.state, "OPEN");
+                    assert.equal(result.data.plan.tasksToComplete.length, completeTasks ? 1 : 0);
+                    assert.equal(result.data.plan.messageMode, "server-default");
+                    assert.equal(
+                        result.data.plan.message,
+                        f.suggestion.title + "\n\n" + f.suggestion.body,
+                    );
+                    assert.deepEqual(result.data.plan.sourceDeletion, {
+                        projectKey: "FORK",
+                        repository: "fork",
+                        ref: "refs/heads/feature/current",
+                        expectedCommit: "a".repeat(40),
+                        afterConfirmedMerge: true,
+                    });
+                    assert.equal(result.data.sourceDeletion, undefined);
+                } else {
+                    assert.match(raw, /Dry run: no tasks were completed/);
+                    assert.match(raw, /Delete source after confirmed merge: FORK\/fork/);
+                }
+            },
+        );
+    }
+}
+test("merge preview uses an explicit prefixed suggestion and no deletion by default", async (t) => {
+    const f = createFixture(t);
+    await f.run(["develop", "--dry-run", "--message-prefix", "[RELEASE] ", "--json"]);
+    const result = JSON.parse(String(f.output.mock.calls[0].arguments[0]));
+    assert.equal(result.data.plan.messageMode, "explicit");
+    assert.ok(result.data.plan.message.startsWith("[RELEASE] " + f.suggestion.title));
+    assert.equal(result.data.plan.sourceDeletion, null);
+});
+test("dry-run plans tasks using current details after collecting all pages", async (t) => {
+    const f = createFixture(t);
+    const task = { id: 101, version: 0, state: "OPEN", severity: "BLOCKER" };
+    f.taskPages[0] = { ...f.taskPages[0], values: [task], isLastPage: false, nextPageStart: 37 };
+    f.taskPages.push({ ...f.taskPages[0], values: [{ ...task, id: 102 }], isLastPage: true });
+    f.taskDetails.set(101, { ...task, state: "RESOLVED", version: 1 });
+    f.taskDetails.set(102, { ...task, id: 102, version: 3 });
+    await f.run(["develop", "--dry-run", "--complete-tasks", "--json"]);
+    const result = JSON.parse(String(f.output.mock.calls[0].arguments[0]));
+    assert.deepEqual(result.data.plan.tasksToComplete, [{ id: 102, version: 3, text: null }]);
+    assert.ok(f.requests[3].path.endsWith("start=37&limit=100"));
+    assert.ok(f.requests[4].path.endsWith("/comments/101"));
+    assert.ok(f.requests.every((request) => request.method === "GET"));
+});
+test("dry-run preserves reviewer blockers before task reads", async (t) => {
+    const f = createFixture(t);
+    f.current.reviewers = [{ status: "NEEDS_WORK" }];
+    await assert.rejects(f.run(["develop", "--dry-run", "--complete-tasks"]), /requested changes/);
+    assert.equal(f.requests.length, 2);
+    assert.equal(f.output.mock.callCount(), 0);
+});
+test("dry-run rejects unsafe source deletion before reading tasks", async (t) => {
+    const f = createFixture(t);
+    f.current.fromRef.latestCommit = "short";
+    await assert.rejects(
+        f.run(["develop", "--dry-run", "--delete-source", "--complete-tasks"]),
+        /full source commit/,
+    );
+    assert.equal(f.requests.length, 2);
+});
+test("suggestion errors in dry-run produce a JSON error without a plan or writes", async (t) => {
+    const f = createFixture(t);
+    f.failures.suggestion = 403;
+    await f.run(["develop", "--dry-run", "--json"]);
+    const result = JSON.parse(String(f.output.mock.calls[0].arguments[0]));
+    assert.equal(result.error.code, "ACCESS_DENIED");
+    assert.equal(result.data, null);
+    assert.ok(f.requests.every((request) => request.method === "GET"));
+});
+
 test("--delete-source deletes only after a confirmed merge and prints the PR URL", async (t) => {
     const f = createFixture(t);
     await f.run(["develop", "--delete-source"]);

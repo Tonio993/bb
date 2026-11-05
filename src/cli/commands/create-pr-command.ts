@@ -9,6 +9,9 @@ import { resolveRepositoryContext } from "../../repository/repository-context.ts
 import type { CommandContext } from "../command-context.ts";
 import { usesJsonOutput, writeJsonResult } from "../json-output.ts";
 import { toPullRequestOutput } from "../pull-request-output.ts";
+import type { CreatePullRequestOptions } from "../../bitbucket/pull-request-types.ts";
+import { formatCreatePreview } from "../pull-request-preview-output.ts";
+import type { CreatePullRequestPreviewOutput } from "../json-output-types.ts";
 
 type CreatePrOptions = {
     sourceBranch?: string;
@@ -18,6 +21,7 @@ type CreatePrOptions = {
     repository?: string;
     reviewer: string[];
     reviewers: boolean;
+    dryRun?: boolean;
 };
 
 export function registerCreatePrCommand(program: Command, context: CommandContext): void {
@@ -25,6 +29,10 @@ export function registerCreatePrCommand(program: Command, context: CommandContex
         .command("create-pr")
         .description("Create a Pull Request on Bitbucket.")
         .option("--json", "Output a versioned JSON result for scripts and CI")
+        .option(
+            "--dry-run",
+            "Preview title, description, and reviewers after fetching Git refs; do not create a PR",
+        )
         .argument("[source]", "Source branch, or target branch when used alone")
         .argument("[target]", "Target branch")
         .option("--source-branch <branch>", "Source branch")
@@ -116,7 +124,7 @@ async function executeCreatePr(
 
     const content = buildPullRequestContent(commits, branches.sourceBranch);
 
-    const pullRequest = await createPullRequest(context.bitbucketClient, {
+    const plan: CreatePullRequestOptions = {
         projectKey: repositoryContext.projectKey,
 
         repository: repositoryContext.repository,
@@ -130,7 +138,18 @@ async function executeCreatePr(
         description: content.description,
 
         reviewers,
-    });
+    };
+    if (options.dryRun) {
+        const preview: CreatePullRequestPreviewOutput = {
+            dryRun: true,
+            plan,
+            git: { remote, fetchPerformed: true },
+        };
+        if (json) writeJsonResult("create-pr", preview);
+        else console.log(formatCreatePreview(plan, remote));
+        return;
+    }
+    const pullRequest = await createPullRequest(context.bitbucketClient, plan);
 
     const url = pullRequest.links.self[0]?.href;
 

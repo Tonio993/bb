@@ -1,6 +1,10 @@
 import type { Command } from "commander";
 
-import { mergeOpenPullRequest } from "../../application/merge-pull-request.ts";
+import {
+    mergeOpenPullRequest,
+    previewOpenPullRequest,
+} from "../../application/merge-pull-request.ts";
+import { formatMergePreview, toMergePreviewOutput } from "../pull-request-preview-output.ts";
 import { resolvePullRequestBranches } from "../../pull-request/branches.ts";
 import { resolveRepositoryContext } from "../../repository/repository-context.ts";
 import type { CommandContext } from "../command-context.ts";
@@ -16,6 +20,7 @@ type MergePrOptions = {
     messagePrefix?: string;
     completeTasks?: boolean;
     deleteSource?: boolean;
+    dryRun?: boolean;
 };
 
 export function registerMergePrCommand(program: Command, context: CommandContext): void {
@@ -23,6 +28,10 @@ export function registerMergePrCommand(program: Command, context: CommandContext
         .command("merge-pr")
         .description("Merge an open Pull Request through the Bitbucket REST API.")
         .option("--json", "Output a versioned JSON result for scripts and CI")
+        .option(
+            "--dry-run",
+            "Preview the merge plan using GET requests only; do not modify tasks, merge, or delete branches",
+        )
         .argument("[source]", "Source branch, or target branch when used alone")
         .argument("[target]", "Target branch")
         .option("--source-branch <branch>", "Source branch")
@@ -72,13 +81,24 @@ Examples:
                         repository: options.repository,
                     },
                 );
-                const result = await mergeOpenPullRequest(context.bitbucketClient, {
+                const mergeOptions = {
                     ...repository,
                     ...branches,
                     messagePrefix: options.messagePrefix,
                     completeTasks: options.completeTasks,
                     deleteSource: options.deleteSource,
-                });
+                };
+                if (options.dryRun) {
+                    const preview = await previewOpenPullRequest(
+                        context.bitbucketClient,
+                        mergeOptions,
+                    );
+                    if (usesJsonOutput(command))
+                        writeJsonResult("merge-pr", toMergePreviewOutput(preview));
+                    else console.log(formatMergePreview(preview));
+                    return;
+                }
+                const result = await mergeOpenPullRequest(context.bitbucketClient, mergeOptions);
                 const url = result.pullRequest.links.self[0]?.href;
                 if (!url && result.sourceDeletion !== "failed") {
                     throw new Error("Bitbucket did not provide the merged Pull Request URL.");

@@ -94,6 +94,7 @@ function createFixture(t: TestContext) {
 
     return {
         config,
+        context,
         events,
         currentBranch,
         remoteFetchUrl,
@@ -107,6 +108,99 @@ function createFixture(t: TestContext) {
         run: (args: string[]) => program.parseAsync(["create-pr", ...args], { from: "user" }),
     };
 }
+
+for (const json of [false, true]) {
+    test(
+        "create dry-run shows generated content and never initializes REST, json=" + json,
+        async (t) => {
+            const f = createFixture(t);
+            const previous = process.exitCode;
+            t.after(() => {
+                process.exitCode = previous;
+            });
+            Object.defineProperty(f.context, "bitbucketClient", {
+                get() {
+                    throw new Error("REST must remain lazy.");
+                },
+            });
+            await f.run(["develop", "--dry-run", ...(json ? ["--json"] : [])]);
+            assert.deepEqual(f.events, [
+                "fetch",
+                "branch:feature/current",
+                "branch:develop",
+                "commits",
+            ]);
+            assert.equal(f.request.mock.callCount(), 0);
+            assert.equal(f.output.mock.callCount(), 1);
+            const raw = String(f.output.mock.calls[0].arguments[0]);
+            if (json) {
+                const result = JSON.parse(raw);
+                assert.equal(result.ok, true);
+                assert.equal(result.data.dryRun, true);
+                assert.equal(result.data.plan.title, "Validate payments");
+                assert.equal(
+                    result.data.plan.description,
+                    "* Validate payments\n    * Check account\n    * Reject invalid amounts",
+                );
+                assert.deepEqual(result.data.plan.reviewers, ["mario", "luca"]);
+                assert.deepEqual(result.data.git, { remote: "upstream", fetchPerformed: true });
+                assert.equal(result.data.pullRequest, undefined);
+            } else {
+                assert.match(raw, /Dry run: no Pull Request was created/);
+                assert.match(raw, /Description:\n\* Validate payments/);
+                assert.match(raw, /Git fetch performed for remote: upstream/);
+            }
+        },
+    );
+}
+test("create dry-run honors title, reviewer, branch and repository overrides", async (t) => {
+    const f = createFixture(t);
+    const previous = process.exitCode;
+    t.after(() => {
+        process.exitCode = previous;
+    });
+    await f.run([
+        "feature/other",
+        "release",
+        "--dry-run",
+        "--json",
+        "--title",
+        "Custom",
+        "--no-reviewers",
+        "--project-key",
+        "OTHER",
+        "--repository",
+        "service",
+    ]);
+    const result = JSON.parse(String(f.output.mock.calls[0].arguments[0]));
+    assert.deepEqual(result.data.plan, {
+        projectKey: "OTHER",
+        repository: "service",
+        sourceBranch: "feature/other",
+        targetBranch: "release",
+        title: "Custom",
+        description: "* Validate payments\n    * Check account\n    * Reject invalid amounts",
+        reviewers: [],
+    });
+    assert.equal(f.currentBranch.mock.callCount(), 0);
+    assert.equal(f.remoteFetchUrl.mock.callCount(), 0);
+    assert.equal(f.request.mock.callCount(), 0);
+});
+test("create dry-run preserves Git failures without emitting a plan", async (t) => {
+    const f = createFixture(t);
+    f.fetch.mock.mockImplementation(() => {
+        throw new Error("Fetch failed.");
+    });
+    await assert.rejects(f.run(["develop", "--dry-run"]), /Fetch failed/);
+    assert.equal(f.request.mock.callCount(), 0);
+    assert.equal(f.output.mock.callCount(), 0);
+});
+test("create dry-run rejects an empty commit comparison", async (t) => {
+    const f = createFixture(t);
+    f.commits.length = 0;
+    await assert.rejects(f.run(["develop", "--dry-run"]), /No commits found/);
+    assert.equal(f.request.mock.callCount(), 0);
+});
 
 test("create-pr fetches and validates remote branches before generating content and posting the Pull Request", async (t) => {
     const fixture = createFixture(t);

@@ -103,6 +103,7 @@ for (const command of [
             }
         }
         if (command[0] === "merge-pr") {
+            assert.ok(stdout.includes("--dry-run"));
             assert.ok(stdout.includes("--delete-source"));
             assert.ok(stdout.includes("--complete-tasks"));
             assert.ok(stdout.includes("--message-prefix"));
@@ -110,6 +111,7 @@ for (const command of [
         if (["get-pr-url", "create-pr", "merge-pr"].includes(command[0])) {
             assert.match(stdout, /--repository <slug>/);
         }
+        if (command[0] === "create-pr") assert.ok(stdout.includes("--dry-run"));
         if (command[0] === "doctor") {
             assert.match(stdout, /--check-token/);
             assert.match(stdout, /--remote/);

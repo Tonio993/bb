@@ -1,5 +1,6 @@
 import type { BitbucketUser } from "../bitbucket/bitbucket-types.ts";
 import type { MergeCheck } from "../pull-request/merge-check-types.ts";
+import type { CreatePullRequestOptions } from "../bitbucket/pull-request-types.ts";
 
 export type JsonErrorCode =
     | "CLI_ARGUMENT_ERROR"
@@ -67,4 +68,27 @@ export type PullRequestChecksOutput = {
         outcome: string | null;
         vetoes: { summaryMessage: string; detailedMessage: string | null }[];
     } | null;
+};
+
+export type CreatePullRequestPreviewOutput = {
+    dryRun: true;
+    plan: CreatePullRequestOptions;
+    git: { remote: string; fetchPerformed: true };
+};
+
+export type MergePullRequestPreviewOutput = {
+    dryRun: true;
+    pullRequest: PullRequestOutput;
+    plan: {
+        tasksToComplete: { id: number; version: number; text: string | null }[];
+        message: string;
+        messageMode: "server-default" | "explicit";
+        sourceDeletion: {
+            projectKey: string;
+            repository: string;
+            ref: string;
+            expectedCommit: string;
+            afterConfirmedMerge: true;
+        } | null;
+    };
 };
