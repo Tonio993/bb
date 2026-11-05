@@ -38,6 +38,35 @@ function invalidResponse(error: unknown): boolean {
     return true;
 }
 
+test("REST operations URL encode opaque project and repository identifiers independently of discovery", async (t) => {
+    const identifiers = { projectKey: "OTHER PROJECT/", repository: "payments & accounts" };
+    const expected =
+        "/rest/api/latest/projects/OTHER%20PROJECT%2F/repos/payments%20%26%20accounts/pull-requests";
+    const created = api(t, pr, 201);
+    await createPullRequest(created.client, {
+        ...identifiers,
+        sourceBranch: "feature/test",
+        targetBranch: "develop",
+        title: "Title",
+        description: "Description",
+        reviewers: [],
+    });
+    assert.equal(new URL(String(created.request.mock.calls[0].arguments[0])).pathname, expected);
+    const details = api(t, pr);
+    await getPullRequest(details.client, { ...identifiers, pullRequestId: 42 });
+    assert.equal(
+        new URL(String(details.request.mock.calls[0].arguments[0])).pathname,
+        expected + "/42",
+    );
+    const search = api(t, { ...page, values: [pr] });
+    await getOpenPullRequest(search.client, {
+        ...identifiers,
+        sourceBranch: "feature/test",
+        targetBranch: "develop",
+    });
+    assert.equal(new URL(String(search.request.mock.calls[0].arguments[0])).pathname, expected);
+});
+
 for (const body of [
     null,
     [],

@@ -16,6 +16,7 @@ export type GitOperations = Pick<
     | "run"
     | "currentBranch"
     | "currentRepository"
+    | "remoteFetchUrl"
     | "fetch"
     | "assertRemoteBranchExists"
     | "commitsBetween"

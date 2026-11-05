@@ -9,6 +9,7 @@ type MergePrOptions = {
     sourceBranch?: string;
     targetBranch?: string;
     projectKey?: string;
+    repository?: string;
     messagePrefix?: string;
     completeTasks?: boolean;
 };
@@ -21,7 +22,8 @@ export function registerMergePrCommand(program: Command, context: CommandContext
         .argument("[target]", "Target branch")
         .option("--source-branch <branch>", "Source branch")
         .option("--target-branch <branch>", "Target branch")
-        .option("--project-key <key>", "Override the configured Bitbucket project")
+        .option("--project-key <key>", "Override the detected or configured Bitbucket project")
+        .option("--repository <slug>", "Override the repository detected from the Git remote")
         .option(
             "--message-prefix <prefix>",
             "Prepend a prefix to Bitbucket's suggested merge commit message",
@@ -36,6 +38,7 @@ Examples:
   bb merge-pr --target-branch develop
   bb merge-pr --source-branch feature/my-change --target-branch develop
   bb merge-pr develop --project-key PROJECT
+  bb merge-pr feature/my-change develop --project-key PROJECT --repository payments
   bb merge-pr develop --message-prefix "[RELEASE] "
   bb merge-pr develop --complete-tasks
   bb -C C:\\repository merge-pr develop
@@ -53,9 +56,14 @@ Examples:
                     () => context.gitClient.currentBranch(),
                     options,
                 );
-                const repository = resolveRepositoryContext(context.config, context.gitClient, {
-                    projectKey: options.projectKey,
-                });
+                const repository = resolveRepositoryContext(
+                    context.config,
+                    () => context.gitClient,
+                    {
+                        projectKey: options.projectKey,
+                        repository: options.repository,
+                    },
+                );
                 const merged = await mergeOpenPullRequest(context.bitbucketClient, {
                     ...repository,
                     ...branches,

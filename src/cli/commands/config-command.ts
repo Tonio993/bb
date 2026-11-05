@@ -24,6 +24,7 @@ Examples:
   bb config bitbucket.url "https://bitbucket.company.com"
   bb config bitbucket.projectKey "PROJECT"
   bb config bitbucket.defaultReviewers "mrossi,lbianchi"
+  bb config bitbucket.sshHostnames "ssh.bitbucket.company.com,bb-internal"
   bb config git.remote "origin"
 `,
         )
@@ -101,11 +102,10 @@ async function initializeConfiguration(context: CommandContext): Promise<void> {
 
         const bitbucketUrl = await askRequired(readline, "Bitbucket URL", config["bitbucket.url"]);
 
-        const projectKey = await askRequired(
-            readline,
-            "Bitbucket project key",
-            config["bitbucket.projectKey"],
+        const projectInput = await readline.question(
+            buildPrompt("Bitbucket project key (optional)", config["bitbucket.projectKey"]),
         );
+        const projectKey = projectInput.trim() || config["bitbucket.projectKey"];
 
         const currentReviewers = config["bitbucket.defaultReviewers"];
 
@@ -130,6 +130,7 @@ async function initializeConfiguration(context: CommandContext): Promise<void> {
                 projectKey,
 
                 defaultReviewers,
+                sshHostnames: config["bitbucket.sshHostnames"],
             },
 
             git: {

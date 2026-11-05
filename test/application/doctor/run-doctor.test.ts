@@ -96,9 +96,7 @@ for (const checkToken of [false, true]) {
             "https://example.invalid/context",
         ]);
         assert.equal(results.at(-1)!.status, "OK");
-        assert.ok(
-            results.some((check) => check.name === "Configuration" && check.status === "WARN"),
-        );
+        assert.ok(results.some((check) => check.name === "Configuration" && check.status === "OK"));
         assert.doesNotMatch(JSON.stringify(results), /private-token/);
     });
 }

@@ -31,6 +31,7 @@ test("missing configuration can be read without creating a file", (t) => {
     assert.equal(store.get("bitbucket.url"), undefined);
     assert.equal(store.get("bitbucket.projectKey"), undefined);
     assert.deepEqual(store.get("bitbucket.defaultReviewers"), []);
+    assert.deepEqual(store.get("bitbucket.sshHostnames"), []);
     assert.equal(store.get("git.remote"), "origin");
     assert.equal(store.exists(), false);
 });
@@ -52,7 +53,8 @@ test("required configuration errors explain how to configure each missing key", 
     );
 
     store.set("bitbucket.url", "https://bitbucket.company.com");
-    assert.throws(() => store.loadRequired(), /bb config bitbucket.projectKey "PROJECT"/);
+    assert.equal(store.loadRequired().bitbucket.projectKey, undefined);
+    assert.deepEqual(store.loadRequired().bitbucket.sshHostnames, []);
 });
 
 test("settings persist independently and normalize CLI values", (t) => {
@@ -68,6 +70,7 @@ test("settings persist independently and normalize CLI values", (t) => {
             url: "https://bitbucket.company.com/bitbucket",
             projectKey: "PROJECT",
             defaultReviewers: ["mario", "luca"],
+            sshHostnames: [],
         },
         git: { remote: "upstream" },
     });
@@ -85,6 +88,62 @@ test("optional settings have defaults when required settings are present", (t) =
     assert.deepEqual(config.bitbucket.defaultReviewers, []);
     assert.equal(config.git.remote, "origin");
 });
+
+test("a server URL can be saved without a default project", (t) => {
+    const store = createStore(t);
+    store.save({
+        bitbucket: { url: "https://bitbucket.company.com", defaultReviewers: [], sshHostnames: [] },
+        git: { remote: "origin" },
+    });
+    assert.equal(store.loadRequired().bitbucket.projectKey, undefined);
+    assert.equal(store.snapshot()["bitbucket.projectKey"], undefined);
+});
+
+test("trusted SSH hostnames are normalized, deduplicated, persisted and cleared", (t) => {
+    const store = createStore(t);
+    store.set("bitbucket.sshHostnames", " SSH-GATEWAY,ssh-gateway,[2001:0DB8::1] ");
+    const expected = ["ssh-gateway", "[2001:db8::1]"];
+    assert.deepEqual(new ConfigStore(store.path).get("bitbucket.sshHostnames"), expected);
+    assert.deepEqual(store.snapshot()["bitbucket.sshHostnames"], expected);
+    store.set("bitbucket.url", "https://bitbucket.company.com");
+    assert.deepEqual(store.loadRequired().bitbucket.sshHostnames, expected);
+    store.set("bitbucket.sshHostnames", "");
+    assert.deepEqual(store.loadRequired().bitbucket.sshHostnames, []);
+});
+
+for (const hostname of [
+    "*.example",
+    "ssh://gateway",
+    "gateway:7999",
+    "gateway:",
+    "gateway/path",
+    "@gateway",
+    "private-user:private-token@gateway",
+    ",",
+]) {
+    test("invalid trusted SSH hostnames are rejected without disclosure: " + hostname, (t) => {
+        const store = createStore(t);
+        store.set("bitbucket.url", "https://bitbucket.company.com");
+        const original = readFileSync(store.path, "utf8");
+        const invalid = () => store.set("bitbucket.sshHostnames", hostname);
+        assert.throws(invalid, (error: unknown) => {
+            assert.ok(error instanceof Error);
+            assert.match(error.message, /Invalid trusted SSH hostname/);
+            assert.doesNotMatch(error.message + error.stack, /private-user|private-token/);
+            return true;
+        });
+        assert.equal(readFileSync(store.path, "utf8"), original);
+        writeFileSync(store.path, JSON.stringify({ bitbucket: { sshHostnames: [hostname] } }));
+        for (const read of [
+            () => store.get("bitbucket.sshHostnames"),
+            () => store.snapshot(),
+            () => store.loadRequired(),
+        ]) {
+            assert.throws(read, /Invalid trusted SSH hostname/);
+        }
+        assert.equal(store.get("git.remote"), "origin");
+    });
+}
 
 test("empty required settings are rejected without changing the file", (t) => {
     const store = createStore(t);
@@ -105,6 +164,7 @@ test("saving a complete configuration creates the parent directory", (t) => {
             url: "https://bitbucket.company.com",
             projectKey: "PROJECT",
             defaultReviewers: ["mario"],
+            sshHostnames: [],
         },
         git: { remote: "origin" },
     };
@@ -129,6 +189,14 @@ test("invalid JSON reports the configuration path", (t) => {
 });
 
 const invalidConfigurations: [unknown, string][] = [
+    [
+        { bitbucket: { sshHostnames: "gateway" } },
+        "Configuration 'bitbucket.sshHostnames' must be an array of strings.",
+    ],
+    [
+        { bitbucket: { sshHostnames: ["gateway", 42] } },
+        "Configuration 'bitbucket.sshHostnames' must be an array of strings.",
+    ],
     [null, "Configuration must be a JSON object."],
     [[], "Configuration must be a JSON object."],
     ["invalid", "Configuration must be a JSON object."],
@@ -215,6 +283,7 @@ const normalizedConfig: BbConfig = {
         url: "https://bitbucket.company.com/bitbucket",
         projectKey: "PROJECT",
         defaultReviewers: ["mario", "luca"],
+        sshHostnames: [],
     },
     git: { remote: "upstream" },
 };
@@ -223,6 +292,7 @@ const unnormalizedConfig = {
         url: " HTTPS://BITBUCKET.company.com:443/bitbucket/// ",
         projectKey: " PROJECT ",
         defaultReviewers: [" mario ", " ", "luca"],
+        sshHostnames: [],
     },
     git: { remote: " upstream " },
 };
@@ -272,6 +342,7 @@ test("snapshots use one read and remain independent from subsequent configuratio
         "bitbucket.url": normalizedConfig.bitbucket.url,
         "bitbucket.projectKey": "PROJECT",
         "bitbucket.defaultReviewers": ["mario", "luca"],
+        "bitbucket.sshHostnames": [],
         "git.remote": "upstream",
     });
     store.set("git.remote", "origin");
@@ -323,12 +394,7 @@ test("save rejects missing required keys and runtime schema errors before changi
     const store = createStore(t);
     store.save(normalizedConfig);
     const original = readFileSync(store.path, "utf8");
-    for (const value of [
-        {},
-        { bitbucket: { url: normalizedConfig.bitbucket.url } },
-        { bitbucket: { url: 42 } },
-        { git: { remote: " " } },
-    ]) {
+    for (const value of [{}, { bitbucket: { url: 42 } }, { git: { remote: " " } }]) {
         assert.throws(() => store.save(value as unknown as BbConfig));
         assert.equal(readFileSync(store.path, "utf8"), original);
         assert.deepEqual(readdirSync(dirname(store.path)), ["config.json"]);

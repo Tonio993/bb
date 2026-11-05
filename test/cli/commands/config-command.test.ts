@@ -164,6 +164,7 @@ test("config init works from an empty configuration and Enter preserves existing
             url: "https://bitbucket.company.com",
             projectKey: "PROJECT",
             defaultReviewers: ["mario", "luca"],
+            sshHostnames: [],
         },
         git: { remote: "upstream" },
     };
@@ -176,4 +177,14 @@ test("config init works from an empty configuration and Enter preserves existing
         assert.ok(second.stdout.includes(`[${value}]`));
     }
     assert.deepEqual(store.loadRequired(), expected);
+});
+
+test("config init permits an omitted project and preserves trusted SSH hostnames", async (t) => {
+    const { store, env } = createFixture(t);
+    store.set("bitbucket.sshHostnames", "SSH-GATEWAY");
+    const result = await initialize(env, ["https://bitbucket.company.com", "", "", ""]);
+    assert.equal(result.code, 0, result.stderr || result.stdout);
+    const config = store.loadRequired();
+    assert.equal(config.bitbucket.projectKey, undefined);
+    assert.deepEqual(config.bitbucket.sshHostnames, ["ssh-gateway"]);
 });

@@ -102,6 +102,9 @@ for (const command of [
             assert.ok(stdout.includes("--complete-tasks"));
             assert.ok(stdout.includes("--message-prefix"));
         }
+        if (["get-pr-url", "create-pr", "merge-pr"].includes(command[0])) {
+            assert.match(stdout, /--repository <slug>/);
+        }
         if (command[0] === "doctor") {
             assert.match(stdout, /--check-token/);
             assert.match(stdout, /--remote/);
@@ -111,6 +114,9 @@ for (const command of [
 }
 
 const invalidArguments = [
+    ["get-pr-url", "feature/test", "develop", "--repository"],
+    ["create-pr", "develop", "--repository"],
+    ["merge-pr", "develop", "--repository"],
     ["doctor", "unexpected"],
     ["doctor", "--unknown-option"],
     ["unknown-command"],

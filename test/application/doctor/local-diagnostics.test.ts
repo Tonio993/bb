@@ -38,6 +38,7 @@ test("doctor validates one snapshot without displaying configuration values", (t
             url: "https://private.example.invalid",
             projectKey: "PRIVATE",
             defaultReviewers: [],
+            sshHostnames: [],
         },
         git: { remote: "origin" },
     });
@@ -53,7 +54,15 @@ test("doctor reports all missing required settings together", (t) => {
     writeFileSync(dependencies.configStore.path, "{}");
     const result = diagnoseLocalEnvironment(dependencies).checks.at(-1)!;
     assert.equal(result.status, "WARN");
-    assert.match(result.message, /bitbucket.url, bitbucket.projectKey/);
+    assert.match(result.message, /bitbucket.url/);
+    assert.doesNotMatch(result.message, /bitbucket.projectKey/);
+});
+
+test("doctor accepts a configuration without a default project", (t) => {
+    const dependencies = fixture(t);
+    dependencies.configStore.set("bitbucket.url", "https://example.invalid");
+    const result = diagnoseLocalEnvironment(dependencies).checks.at(-1)!;
+    assert.equal(result.status, "OK");
 });
 
 for (const content of [

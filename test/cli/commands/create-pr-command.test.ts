@@ -23,12 +23,15 @@ function createFixture(t: TestContext) {
             url: "https://bitbucket.example/bitbucket",
             projectKey: "PROJECT",
             defaultReviewers: ["mario", "luca"],
+            sshHostnames: [],
         },
         git: { remote: "upstream" },
     };
     const events: string[] = [];
     const currentBranch = t.mock.fn(() => "feature/current");
-    const currentRepository = t.mock.fn(() => "payments");
+    const remoteFetchUrl = t.mock.fn(
+        () => "https://bitbucket.example/bitbucket/scm/PROJECT/payments.git",
+    );
     const fetch = t.mock.fn<GitOperations["fetch"]>(() => {
         events.push("fetch");
     });
@@ -44,7 +47,7 @@ function createFixture(t: TestContext) {
     });
     const git = createGitStub({
         currentBranch,
-        currentRepository,
+        remoteFetchUrl,
         fetch,
         assertRemoteBranchExists: branchExists,
         commitsBetween: readCommits,
@@ -93,7 +96,7 @@ function createFixture(t: TestContext) {
         config,
         events,
         currentBranch,
-        currentRepository,
+        remoteFetchUrl,
         fetch,
         branchExists,
         readCommits,
@@ -157,7 +160,6 @@ test("create-pr fetches and validates remote branches before generating content 
 
 test("explicit branches avoid querying the current branch and allow title and project overrides", async (t) => {
     const fixture = createFixture(t);
-    fixture.currentRepository.mock.mockImplementation(() => "payments & accounts");
     await fixture.run([
         "feature/explicit",
         "main",
@@ -174,11 +176,72 @@ test("explicit branches avoid querying the current branch and allow title and pr
     const [url, options] = fixture.request.mock.calls[0].arguments;
     assert.equal(
         url,
-        "https://bitbucket.example/bitbucket/rest/api/latest/projects/OTHER%20PROJECT/repos/payments%20%26%20accounts/pull-requests",
+        "https://bitbucket.example/bitbucket/rest/api/latest/projects/OTHER%20PROJECT/repos/payments/pull-requests",
     );
     const body: { title: string } = JSON.parse(String(options?.body));
     assert.equal(body.title, "Custom title");
 });
+
+test("creation uses the remote project instead of a stale configured project", async (t) => {
+    const fixture = createFixture(t);
+    fixture.config.bitbucket.projectKey = "STALE";
+    await fixture.run(["develop"]);
+    const url = new URL(String(fixture.request.mock.calls[0].arguments[0]));
+    assert.match(url.pathname, /\/projects\/PROJECT\/repos\/payments\/pull-requests$/);
+    assert.equal(fixture.remoteFetchUrl.mock.callCount(), 1);
+    assert.deepEqual(fixture.remoteFetchUrl.mock.calls[0].arguments, ["upstream"]);
+});
+
+test("creation discovers the project when no default is configured", async (t) => {
+    const fixture = createFixture(t);
+    delete fixture.config.bitbucket.projectKey;
+    await fixture.run(["develop"]);
+    assert.match(
+        String(fixture.request.mock.calls[0].arguments[0]),
+        /\/projects\/PROJECT\/repos\/payments\//,
+    );
+});
+
+test("manual repository selection skips remote discovery while preserving Git content generation", async (t) => {
+    const fixture = createFixture(t);
+    await fixture.run(["feature/test", "develop", "--repository", " manual "]);
+    assert.equal(fixture.remoteFetchUrl.mock.callCount(), 0);
+    assert.equal(fixture.fetch.mock.callCount(), 1);
+    assert.equal(fixture.readCommits.mock.callCount(), 1);
+    assert.match(
+        String(fixture.request.mock.calls[0].arguments[0]),
+        /\/projects\/PROJECT\/repos\/manual\//,
+    );
+});
+
+test("creation accepts a configured SSH hostname association", async (t) => {
+    const fixture = createFixture(t);
+    fixture.config.bitbucket.sshHostnames = ["ssh-gateway"];
+    fixture.remoteFetchUrl.mock.mockImplementation(() => "git@ssh-gateway:PROJECT/payments.git");
+    await fixture.run(["develop"]);
+    assert.equal(fixture.request.mock.callCount(), 1);
+});
+
+for (const remote of [
+    "https://private-user:private-token@other.example/bitbucket/scm/PROJECT/payments.git",
+    "https://bitbucket.example/another-instance/scm/PROJECT/payments.git",
+    "git@ssh-gateway:PROJECT/payments.git",
+]) {
+    test("a mismatched remote prevents fetch and PR creation: " + remote, async (t) => {
+        const fixture = createFixture(t);
+        fixture.remoteFetchUrl.mock.mockImplementation(() => remote);
+        await assert.rejects(fixture.run(["develop"]), (error: unknown) => {
+            assert.ok(error instanceof Error);
+            assert.match(error.message, /remote does not match/);
+            assert.doesNotMatch(error.message + error.stack, /private-user|private-token/);
+            return true;
+        });
+        assert.deepEqual(fixture.events, []);
+        assert.equal(fixture.fetch.mock.callCount(), 0);
+        assert.equal(fixture.request.mock.callCount(), 0);
+        assert.equal(fixture.output.mock.callCount(), 0);
+    });
+}
 
 for (const namedSource of [false, true]) {
     test(`named target ${namedSource ? "and source avoid" : "uses"} the current branch`, async (t) => {
@@ -225,7 +288,7 @@ for (const args of [
         const fixture = createFixture(t);
         await assert.rejects(fixture.run(args), { code: "commander.conflictingOption" });
         assert.equal(fixture.currentBranch.mock.callCount(), 0);
-        assert.equal(fixture.currentRepository.mock.callCount(), 0);
+        assert.equal(fixture.remoteFetchUrl.mock.callCount(), 0);
         assert.deepEqual(fixture.events, []);
         assert.equal(fixture.request.mock.callCount(), 0);
     });

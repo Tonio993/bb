@@ -8,6 +8,7 @@ export function createGitStub(overrides: Partial<GitOperations> = {}): GitOperat
         run: unexpected,
         currentBranch: unexpected,
         currentRepository: unexpected,
+        remoteFetchUrl: unexpected,
         fetch: unexpected,
         assertRemoteBranchExists: unexpected,
         commitsBetween: unexpected,

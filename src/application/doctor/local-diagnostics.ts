@@ -75,9 +75,7 @@ export function diagnoseLocalEnvironment(
         } else {
             const snapshot = store.snapshot();
             serverUrl = snapshot["bitbucket.url"];
-            const missing = (["bitbucket.url", "bitbucket.projectKey"] as const).filter(
-                (key) => !snapshot[key],
-            );
+            const missing = (["bitbucket.url"] as const).filter((key) => !snapshot[key]);
             results.push({
                 name: "Configuration",
                 status: missing.length ? "WARN" : "OK",

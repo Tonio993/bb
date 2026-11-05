@@ -1,6 +1,7 @@
 import type { Command } from "commander";
 
 import { getOpenPullRequests } from "../../bitbucket/pull-request-search.ts";
+import { requireProjectKey } from "../../config/config-validation.ts";
 import { resolvePullRequestBranches } from "../../pull-request/branches.ts";
 import type { CommandContext } from "../command-context.ts";
 
@@ -45,7 +46,7 @@ async function executeGetPrUrls(
         throw new Error("Source and target branches are required.");
     });
 
-    const projectKey = options.projectKey?.trim() || context.config.bitbucket.projectKey;
+    const projectKey = requireProjectKey(context.config.bitbucket.projectKey, options.projectKey);
 
     const pullRequests = await getOpenPullRequests(context.bitbucketClient, {
         projectKey,

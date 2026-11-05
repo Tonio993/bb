@@ -1,8 +1,9 @@
 export type BbConfig = {
     bitbucket: {
         url: string;
-        projectKey: string;
+        projectKey?: string;
         defaultReviewers: string[];
+        sshHostnames: string[];
     };
 
     git: {
@@ -15,6 +16,7 @@ export type RawConfig = {
         url?: string;
         projectKey?: string;
         defaultReviewers?: string[];
+        sshHostnames?: string[];
     };
 
     git?: {
@@ -26,6 +28,7 @@ export const CONFIG_KEYS = [
     "bitbucket.url",
     "bitbucket.projectKey",
     "bitbucket.defaultReviewers",
+    "bitbucket.sshHostnames",
     "git.remote",
 ] as const;
 
@@ -35,6 +38,7 @@ export type ConfigSnapshot = {
     readonly "bitbucket.url": string | undefined;
     readonly "bitbucket.projectKey": string | undefined;
     readonly "bitbucket.defaultReviewers": string[];
+    readonly "bitbucket.sshHostnames": string[];
     readonly "git.remote": string;
 };
 

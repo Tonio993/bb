@@ -25,6 +25,7 @@ function createFixture(t: TestContext) {
             url: "https://bitbucket.example/bitbucket",
             projectKey: "PROJECT",
             defaultReviewers: [],
+            sshHostnames: [],
         },
         git: { remote: "origin" },
     };
@@ -149,14 +150,16 @@ function createFixture(t: TestContext) {
         },
     );
     const currentBranch = t.mock.fn(() => "feature/current");
-    const currentRepository = t.mock.fn(() => "payments");
+    const remoteFetchUrl = t.mock.fn(
+        () => "https://bitbucket.example/bitbucket/scm/PROJECT/payments.git",
+    );
     const runGit = t.mock.fn<GitOperations["run"]>(() => {
         throw new Error("Merging must use REST.");
     });
     const fetchGit = t.mock.fn<GitOperations["fetch"]>(() => {
         throw new Error("Merging must not fetch Git references.");
     });
-    const git = createGitStub({ currentBranch, currentRepository, run: runGit, fetch: fetchGit });
+    const git = createGitStub({ currentBranch, remoteFetchUrl, run: runGit, fetch: fetchGit });
     const output = t.mock.method(console, "log", () => {});
     const context: CommandContext = {
         get doctor(): never {
@@ -175,6 +178,8 @@ function createFixture(t: TestContext) {
         },
     };
     return {
+        config,
+        context,
         current,
         listed,
         merged,
@@ -189,7 +194,7 @@ function createFixture(t: TestContext) {
         taskFailures,
         taskCompletion,
         currentBranch,
-        currentRepository,
+        remoteFetchUrl,
         runGit,
         fetchGit,
         run: (args: string[]) => runCli(["merge-pr", ...args], context),
@@ -197,6 +202,26 @@ function createFixture(t: TestContext) {
 }
 
 const basePath = "/bitbucket/rest/api/latest/projects/PROJECT/repos/payments/pull-requests";
+
+test("manual merge with explicit branches and identity does not initialize Git", async (t) => {
+    const fixture = createFixture(t);
+    delete fixture.config.bitbucket.projectKey;
+    Object.defineProperty(fixture.context, "gitClient", {
+        get() {
+            throw new Error("Git must remain lazy.");
+        },
+    });
+    await fixture.run([
+        "feature/current",
+        "develop",
+        "--project-key",
+        " PROJECT ",
+        "--repository",
+        " payments ",
+    ]);
+    assert.equal(fixture.requests.at(-1)!.method, "POST");
+    assert.equal(fixture.remoteFetchUrl.mock.callCount(), 0);
+});
 
 test("merge-pr reads the current Pull Request and merges through REST with its latest version", async (t) => {
     const fixture = createFixture(t);
@@ -207,7 +232,7 @@ test("merge-pr reads the current Pull Request and merges through REST with its l
         { path: `${basePath}/42/merge`, method: "POST", body: { version: 7 } },
     ]);
     assert.equal(fixture.currentBranch.mock.callCount(), 1);
-    assert.equal(fixture.currentRepository.mock.callCount(), 1);
+    assert.equal(fixture.remoteFetchUrl.mock.callCount(), 1);
     assert.equal(fixture.runGit.mock.callCount(), 0);
     assert.equal(fixture.fetchGit.mock.callCount(), 0);
     assert.deepEqual(
@@ -258,15 +283,12 @@ test("a named target resolves the current branch", async (t) => {
     assert.equal(fixture.currentBranch.mock.callCount(), 1);
 });
 
-test("project overrides and repository names are URL encoded and version zero is valid", async (t) => {
+test("project overrides are URL encoded and version zero is valid", async (t) => {
     const fixture = createFixture(t);
-    fixture.currentRepository.mock.mockImplementation(() => "payments & accounts");
-    fixture.current.toRef.repository.slug = "payments & accounts";
     fixture.current.toRef.repository.project.key = "OTHER PROJECT";
     fixture.current.version = 0;
     await fixture.run(["develop", "--project-key", " OTHER PROJECT "]);
-    const path =
-        "/bitbucket/rest/api/latest/projects/OTHER%20PROJECT/repos/payments%20%26%20accounts/pull-requests";
+    const path = "/bitbucket/rest/api/latest/projects/OTHER%20PROJECT/repos/payments/pull-requests";
     assert.equal(fixture.requests[0].path, `${path}?state=OPEN&start=0&limit=100`);
     assert.equal(fixture.requests[1].path, `${path}/42`);
     assert.deepEqual(fixture.requests[2], {

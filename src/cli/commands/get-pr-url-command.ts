@@ -9,6 +9,7 @@ type GetPrUrlOptions = {
     sourceBranch?: string;
     targetBranch?: string;
     projectKey?: string;
+    repository?: string;
 };
 
 export function registerGetPrUrlCommand(program: Command, context: CommandContext): void {
@@ -19,7 +20,8 @@ export function registerGetPrUrlCommand(program: Command, context: CommandContex
         .argument("[target]", "Target branch")
         .option("--source-branch <branch>", "Source branch")
         .option("--target-branch <branch>", "Target branch")
-        .option("--project-key <key>", "Override the configured Bitbucket project")
+        .option("--project-key <key>", "Override the detected or configured Bitbucket project")
+        .option("--repository <slug>", "Override the repository detected from the Git remote")
         .addHelpText(
             "after",
             `
@@ -28,6 +30,7 @@ Examples:
   bb get-pr-url feature/my-change develop
   bb get-pr-url --target-branch develop
   bb get-pr-url develop --project-key PROJECT
+  bb get-pr-url feature/my-change develop --project-key PROJECT --repository payments
   bb -C C:\\repository get-pr-url develop
 `,
         )
@@ -55,8 +58,9 @@ async function executeGetPrUrl(
         options,
     );
 
-    const repositoryContext = resolveRepositoryContext(context.config, context.gitClient, {
+    const repositoryContext = resolveRepositoryContext(context.config, () => context.gitClient, {
         projectKey: options.projectKey,
+        repository: options.repository,
     });
 
     const pullRequest = await getOpenPullRequest(context.bitbucketClient, {

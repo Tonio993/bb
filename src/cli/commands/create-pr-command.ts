@@ -13,6 +13,7 @@ type CreatePrOptions = {
     targetBranch?: string;
     title?: string;
     projectKey?: string;
+    repository?: string;
     reviewer: string[];
     reviewers: boolean;
 };
@@ -26,7 +27,8 @@ export function registerCreatePrCommand(program: Command, context: CommandContex
         .option("--source-branch <branch>", "Source branch")
         .option("--target-branch <branch>", "Target branch")
         .option("--title <title>", "Override the generated Pull Request title")
-        .option("--project-key <key>", "Override the configured Bitbucket project")
+        .option("--project-key <key>", "Override the detected or configured Bitbucket project")
+        .option("--repository <slug>", "Override the repository detected from the Git remote")
         .option(
             "--reviewer <name>",
             "Add a reviewer; can be specified multiple times or as a comma-separated list",
@@ -50,6 +52,7 @@ Examples:
   bb create-pr develop --reviewer mario --reviewer luca
   bb create-pr develop --reviewer mario,luca
   bb create-pr develop --no-reviewers
+  bb create-pr develop --project-key PROJECT --repository payments
   bb -C C:\\repository create-pr develop
 `,
         )
@@ -83,8 +86,9 @@ async function executeCreatePr(
         context.config.bitbucket.defaultReviewers,
     );
 
-    const repositoryContext = resolveRepositoryContext(context.config, context.gitClient, {
+    const repositoryContext = resolveRepositoryContext(context.config, () => context.gitClient, {
         projectKey: options.projectKey,
+        repository: options.repository,
     });
 
     const remote = context.config.git.remote;

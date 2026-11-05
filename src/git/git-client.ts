@@ -71,6 +71,32 @@ export class GitClient {
         return basename(repositoryPath);
     }
 
+    remoteFetchUrl(remote: string = this.remote): string {
+        const name = remote.trim();
+        if (!name) throw new Error("Git remote name cannot be empty. Configure 'git.remote'.");
+        const args = ["remote", "get-url", "--", name];
+        const message =
+            "Unable to read the Git remote fetch URL. Ensure Git is installed, the directory is a Git repository, and the configured remote exists.";
+        let result: GitExecutionResult;
+        try {
+            result = this.execute(args, false, "pipe", 10000);
+        } catch (error) {
+            // Git diagnostics may include URLs containing credentials.
+            throw new GitCommandError(message, {
+                args,
+                exitCode: error instanceof GitCommandError ? error.exitCode : undefined,
+                signal: error instanceof GitCommandError ? error.signal : undefined,
+            });
+        }
+        if (result.exitCode !== 0) {
+            throw new GitCommandError(message, { args, exitCode: result.exitCode });
+        }
+        const url = result.stdout.trim();
+        if (!url)
+            throw new Error("Git did not provide a fetch URL. Check the configured 'git.remote'.");
+        return url;
+    }
+
     fetch(remote: string = this.remote): void {
         this.capture(["fetch", remote], true);
     }

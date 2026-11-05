@@ -13,6 +13,7 @@ import { homedir } from "node:os";
 import { dirname, join, basename } from "node:path";
 
 import { normalizeBitbucketUrl } from "./bitbucket-url.ts";
+import { normalizeSshHostnames } from "./ssh-hostnames.ts";
 import type { BbConfig, RawConfig, ConfigSnapshot, ConfigKey } from "./config-schema.ts";
 import {
     assertRawConfig,
@@ -55,6 +56,8 @@ export class ConfigStore {
                     : normalizeText(config.bitbucket.projectKey, "Bitbucket project key");
             case "bitbucket.defaultReviewers":
                 return normalizeReviewers(config.bitbucket?.defaultReviewers ?? []);
+            case "bitbucket.sshHostnames":
+                return normalizeSshHostnames(config.bitbucket?.sshHostnames ?? []);
             case "git.remote":
                 return config.git?.remote === undefined
                     ? "origin"
@@ -78,6 +81,10 @@ export class ConfigStore {
             case "bitbucket.defaultReviewers":
                 config.bitbucket.defaultReviewers = value.split(",");
 
+                break;
+
+            case "bitbucket.sshHostnames":
+                config.bitbucket.sshHostnames = value.trim() ? value.split(",") : [];
                 break;
 
             case "git.remote":

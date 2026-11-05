@@ -19,7 +19,12 @@ import { createGitStub } from "../helpers/git-stub.ts";
 
 const root = "/rest/api/latest/projects/PROJECT/repos";
 const config = {
-    bitbucket: { url: "https://bitbucket.example", projectKey: "PROJECT", defaultReviewers: [] },
+    bitbucket: {
+        url: "https://bitbucket.example",
+        projectKey: "PROJECT",
+        defaultReviewers: [],
+        sshHostnames: [],
+    },
     git: { remote: "origin" },
 };
 
@@ -264,13 +269,13 @@ function createContext(
     projectWide: boolean,
 ): CommandContext {
     const git = createGitStub({
-        currentRepository: t.mock.fn(() => "payments"),
+        remoteFetchUrl: t.mock.fn(() => "https://bitbucket.example/scm/PROJECT/payments.git"),
         currentBranch: () => {
             throw new Error("Both branches are already known.");
         },
     });
     return {
-        config,
+        config: structuredClone(config),
         bitbucketClient: client,
         get doctor(): never {
             throw new Error("Doctor must remain lazy.");
@@ -332,6 +337,51 @@ test("get-pr-urls prints only matching URLs and forwards the repository filter",
     );
     assert.equal(api.responses.length, 0);
 });
+
+test("manual get-pr-url avoids Git when branches and identity are explicit", async (t) => {
+    const api = createApi(t);
+    const context = createContext(t, api.client, true);
+    delete context.config.bitbucket.projectKey;
+    api.responses.push({
+        path: `${root}/payments/pull-requests?state=OPEN&start=0&limit=100`,
+        body: page([]),
+    });
+    await runCli(
+        [
+            "get-pr-url",
+            "feature/test",
+            "develop",
+            "--project-key",
+            "PROJECT",
+            "--repository",
+            "payments",
+        ],
+        context,
+    );
+    assert.equal(api.requests.length, 1);
+});
+
+for (const override of [undefined, " ", "PROJECT"]) {
+    test(
+        "project-wide discovery without a default requires an explicit project: " +
+            JSON.stringify(override),
+        async (t) => {
+            const api = createApi(t);
+            const context = createContext(t, api.client, true);
+            delete context.config.bitbucket.projectKey;
+            const args = ["get-pr-urls", "feature/test", "develop"];
+            if (override !== undefined) args.push("--project-key", override);
+            if (override?.trim()) {
+                api.responses.push({ path: `${root}?start=0&limit=100`, body: page([]) });
+                await runCli(args, context);
+                assert.equal(api.requests.length, 1);
+            } else {
+                await assert.rejects(runCli(args, context), /Specify '--project-key <key>'/);
+                assert.deepEqual(api.requests, []);
+            }
+        },
+    );
+}
 
 test("get-pr-urls rejects identical branches before reading configuration or querying Bitbucket", async () => {
     const context: CommandContext = {

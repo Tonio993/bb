@@ -1,4 +1,5 @@
 import { normalizeBitbucketUrl } from "./bitbucket-url.ts";
+import { normalizeSshHostnames } from "./ssh-hostnames.ts";
 import { CONFIG_KEYS } from "./config-schema.ts";
 import type { BbConfig, RawConfig, ConfigSnapshot, ConfigKey } from "./config-schema.ts";
 
@@ -27,8 +28,8 @@ export function assertRawConfig(value: unknown): asserts value is RawConfig {
             continue;
         }
 
-        if (key === "bitbucket.defaultReviewers") {
-            if (!Array.isArray(entry) || !entry.every((reviewer) => typeof reviewer === "string")) {
+        if (key === "bitbucket.defaultReviewers" || key === "bitbucket.sshHostnames") {
+            if (!Array.isArray(entry) || !entry.every((item) => typeof item === "string")) {
                 throw new Error(`Configuration '${key}' must be an array of strings.`);
             }
         } else if (typeof entry !== "string") {
@@ -60,6 +61,9 @@ export function normalizeConfig(value: unknown): RawConfig {
                 value.bitbucket.defaultReviewers,
             );
         }
+        if (value.bitbucket.sshHostnames !== undefined) {
+            config.bitbucket.sshHostnames = normalizeSshHostnames(value.bitbucket.sshHostnames);
+        }
     }
     if (value.git) {
         config.git = { ...value.git };
@@ -84,6 +88,7 @@ export function toSnapshot(config: RawConfig): ConfigSnapshot {
         "bitbucket.url": config.bitbucket?.url,
         "bitbucket.projectKey": config.bitbucket?.projectKey,
         "bitbucket.defaultReviewers": config.bitbucket?.defaultReviewers ?? [],
+        "bitbucket.sshHostnames": config.bitbucket?.sshHostnames ?? [],
         "git.remote": config.git?.remote ?? "origin",
     };
 }
@@ -92,11 +97,26 @@ export function requireConfiguration(config: ConfigSnapshot): BbConfig {
     const url = config["bitbucket.url"];
     if (!url) throw missingConfigurationError("bitbucket.url", "https://bitbucket.company.com");
     const projectKey = config["bitbucket.projectKey"];
-    if (!projectKey) throw missingConfigurationError("bitbucket.projectKey", "PROJECT");
     return {
-        bitbucket: { url, projectKey, defaultReviewers: config["bitbucket.defaultReviewers"] },
+        bitbucket: {
+            url,
+            projectKey,
+            defaultReviewers: config["bitbucket.defaultReviewers"],
+            sshHostnames: config["bitbucket.sshHostnames"],
+        },
         git: { remote: config["git.remote"] },
     };
+}
+
+export function requireProjectKey(configured: string | undefined, override?: string): string {
+    const projectKey = override?.trim() || configured?.trim();
+    if (!projectKey) {
+        throw new Error(
+            "A Bitbucket project is required. Specify '--project-key <key>' or configure it with:\n" +
+                '  bb config bitbucket.projectKey "PROJECT"',
+        );
+    }
+    return projectKey;
 }
 
 function missingConfigurationError(key: ConfigKey, example: string): Error {
