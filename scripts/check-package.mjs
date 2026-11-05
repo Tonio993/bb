@@ -263,6 +263,70 @@ try {
         }).trim(),
         "",
     );
+    console.log("Checking Pull Request consultation in the installed JavaScript...");
+    for (const command of ["list", "show"]) {
+        for (const json of [false, true]) {
+            const consultationCheck = [
+                "import assert from 'node:assert/strict';",
+                "import cp from 'node:child_process';",
+                "import { syncBuiltinESMExports } from 'node:module';",
+                "cp.spawnSync = () => { throw new Error('Explicit consultation must not start Git.'); };",
+                "syncBuiltinESMExports();",
+                "const repository = { name:'Payments', slug:'payments', project:{ key:'REMOTE' } };",
+                "const pr = { id:42, version:7, state:'OPEN', title:'Inspect payments',",
+                "author:{ user:{ name:'jane', displayName:'Jane', emailAddress:'private-marker' } },",
+                "reviewers:[{ status:'APPROVED', user:{ name:'john' } }],",
+                "fromRef:{ id:'refs/heads/feature/test', displayId:'feature/test', repository },",
+                "toRef:{ id:'refs/heads/develop', displayId:'develop', repository },",
+                "links:{ self:[{ href:'https://bitbucket.example/context/projects/REMOTE/repos/payments/pull-requests/42' }] } };",
+                "const root = 'https://bitbucket.example/context/rest/api/latest/projects/REMOTE/repos/payments/pull-requests';",
+                "const paths = [" +
+                    JSON.stringify(command === "list" ? "?state=OPEN&start=0&limit=100" : "/42") +
+                    ", '/42/blocker-comments?start=0&limit=100'];",
+                "let calls = 0;",
+                "globalThis.fetch = async (input, init) => {",
+                "assert.equal(String(input), root + paths[calls]);",
+                "assert.equal(init.method, 'GET');",
+                "assert.equal(new Headers(init.headers).get('Authorization'), 'Bearer package-smoke-token');",
+                "calls++;",
+                "const page = values => ({ size:values.length, limit:100, start:0, isLastPage:true, values });",
+                "return Response.json(calls === 1 ? (" +
+                    JSON.stringify(command) +
+                    " === 'list' ? page([pr]) : pr) : page([",
+                "{ id:101, version:0, state:'OPEN', severity:'BLOCKER', text:'Fix validation' } ])); };",
+                "await import(" + JSON.stringify(pathToFileURL(main).href) + ");",
+                "assert.equal(calls, 2);",
+            ].join("\n");
+            const args = [main, ...(json ? ["--json"] : []), "pr", command];
+            if (command === "list")
+                args.push("--project-key", "REMOTE", "--repository", "payments");
+            else
+                args.push(
+                    "https://bitbucket.example/context/projects/REMOTE/repos/payments/pull-requests/42",
+                );
+            const result = run(
+                process.execPath,
+                ["--input-type=module", "--eval", consultationCheck, ...args],
+                {
+                    env: { ...environment, BB_TOKEN: "package-smoke-token" },
+                },
+            );
+            assert.doesNotMatch(result, /private-marker|package-smoke-token/);
+            if (json) {
+                const payload = JSON.parse(result);
+                assert.equal(payload.command, "pr " + command);
+                assert.equal(payload.ok, true);
+                const pr =
+                    command === "list" ? payload.data.pullRequests[0] : payload.data.pullRequest;
+                assert.equal(pr.title, "Inspect payments");
+                assert.equal(pr.author.name, "jane");
+                assert.deepEqual(pr.openTasks, [{ id: 101, text: "Fix validation" }]);
+            } else {
+                assert.match(result, /#42 OPEN - Inspect payments/);
+                assert.match(result, /#101 Fix validation/);
+            }
+        }
+    }
     console.log("Checking source deletion after merge in the installed JavaScript...");
     for (const outcome of ["deleted", "deletion-rejected", "merge-rejected", "unconfirmed-merge"]) {
         const mergeCheck = `
