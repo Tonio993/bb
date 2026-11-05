@@ -4,6 +4,7 @@ import type { CommandContext } from "./command-context.ts";
 import { registerCommands } from "./commands/index.ts";
 import { usesJsonOutput, commandName, writeJsonResult } from "./json-output.ts";
 import { toJsonError } from "./json-errors.ts";
+import { readPackageVersion } from "./version.ts";
 
 export async function runCli(args: string[], context: CommandContext): Promise<void> {
     const program = new Command();
@@ -24,6 +25,7 @@ export async function runCli(args: string[], context: CommandContext): Promise<v
 
     program
         .name("bb")
+        .version(readPackageVersion())
         .exitOverride()
         .description("Bitbucket command-line helper.")
         .option("-C, --path <path>", "Run the command from the specified directory")
