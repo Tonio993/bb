@@ -131,6 +131,7 @@ async function initializeConfiguration(context: CommandContext): Promise<void> {
 
                 defaultReviewers,
                 sshHostnames: config["bitbucket.sshHostnames"],
+                descriptionTemplate: config["bitbucket.descriptionTemplate"],
             },
 
             git: {

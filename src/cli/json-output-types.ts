@@ -19,7 +19,8 @@ export type JsonErrorCode =
     | "GIT_ERROR"
     | "DIAGNOSTIC_FAILED"
     | "MERGE_CHECK_FAILED"
-    | "SOURCE_DELETION_FAILED";
+    | "SOURCE_DELETION_FAILED"
+    | "BROWSER_OPEN_FAILED";
 
 export type JsonError = {
     code: JsonErrorCode;
@@ -74,6 +75,12 @@ export type CreatePullRequestPreviewOutput = {
     dryRun: true;
     plan: CreatePullRequestOptions;
     git: { remote: string; fetchPerformed: true };
+};
+
+export type CreatePullRequestOutput = {
+    pullRequest: PullRequestOutput;
+    created: boolean;
+    browser: "not-requested" | "opened" | "failed";
 };
 
 export type MergePullRequestPreviewOutput = {

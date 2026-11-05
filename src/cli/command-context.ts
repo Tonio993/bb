@@ -6,6 +6,7 @@ import type { GitOperations } from "../git/git-types.ts";
 import type { DoctorCheck, DoctorOptions } from "../application/doctor/doctor-types.ts";
 
 export type CommandContext = {
+    readonly openUrl?: (url: string) => Promise<void>;
     readonly doctor: (options?: DoctorOptions) => Promise<DoctorCheck[]>;
     readonly tokenStore: Pick<TokenStore, "inspectCredential" | "set" | "delete">;
     readonly configStore: Pick<ConfigStore, "path" | "get" | "set" | "save" | "snapshot">;

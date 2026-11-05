@@ -52,7 +52,16 @@ export async function getOpenPullRequest(
         const pullRequest = response.values.find(
             (value) =>
                 value.fromRef.id === `refs/heads/${sourceBranch}` &&
-                value.toRef.id === `refs/heads/${targetBranch}`,
+                value.toRef.id === `refs/heads/${targetBranch}` &&
+                (!options.sourceRepository ||
+                    (value.state === "OPEN" &&
+                        value.fromRef.repository.project.key.toLowerCase() ===
+                            options.sourceRepository.projectKey.toLowerCase() &&
+                        value.fromRef.repository.slug.toLowerCase() ===
+                            options.sourceRepository.repository.toLowerCase() &&
+                        value.toRef.repository.project.key.toLowerCase() ===
+                            projectKey.toLowerCase() &&
+                        value.toRef.repository.slug.toLowerCase() === repository.toLowerCase())),
         );
 
         if (pullRequest) {

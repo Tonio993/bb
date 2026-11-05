@@ -11,6 +11,7 @@ import { GitClient } from "./git/git-client.ts";
 import { runDoctor } from "./application/doctor/run-doctor.ts";
 import { readNpmVersion } from "./diagnostics/npm-version.ts";
 import { isExecutableAvailable } from "./diagnostics/executable.ts";
+import { openUrl } from "./browser/open-url.ts";
 
 const configStore = new ConfigStore();
 
@@ -29,6 +30,7 @@ const getConfig = () => {
 };
 
 const context: CommandContext = {
+    openUrl,
     doctor: (options = {}) =>
         runDoctor(
             {

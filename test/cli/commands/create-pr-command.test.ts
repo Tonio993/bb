@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import { Command } from "commander";
 import { test } from "node:test";
+import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { TestContext } from "node:test";
 
 import { BitbucketApiError } from "../../../src/bitbucket/bitbucket-api-error.ts";
@@ -72,6 +75,18 @@ function createFixture(t: TestContext) {
         events.push("create");
         return Response.json(pullRequest, { status: 201 });
     });
+    const existingPages: unknown[] = [];
+    const search = t.mock.fn<FetchImplementation>(async () =>
+        Response.json(
+            existingPages.shift() ?? {
+                values: [],
+                size: 0,
+                start: 0,
+                limit: 100,
+                isLastPage: true,
+            },
+        ),
+    );
     const output = t.mock.method(console, "log", () => {});
     const context: CommandContext = {
         get doctor(): never {
@@ -83,7 +98,8 @@ function createFixture(t: TestContext) {
         config,
         gitClient: git,
         bitbucketClient: new BitbucketClient(config.bitbucket.url, () => "test-token", {
-            fetch: request,
+            fetch: async (input, init) =>
+                init?.method === "GET" ? search(input, init) : request(input, init),
         }),
         get configStore(): never {
             throw new Error("Configuration is already loaded.");
@@ -95,6 +111,8 @@ function createFixture(t: TestContext) {
     return {
         config,
         context,
+        search,
+        existingPages,
         events,
         currentBranch,
         remoteFetchUrl,
@@ -200,6 +218,141 @@ test("create dry-run rejects an empty commit comparison", async (t) => {
     f.commits.length = 0;
     await assert.rejects(f.run(["develop", "--dry-run"]), /No commits found/);
     assert.equal(f.request.mock.callCount(), 0);
+});
+
+function inputFile(t: TestContext, content: string): string {
+    const dir = mkdtempSync(join(tmpdir(), "bb-description-"));
+    t.after(() => rmSync(dir, { recursive: true, force: true }));
+    const path = join(dir, "description.md");
+    writeFileSync(path, content, "utf8");
+    return path;
+}
+test("literal descriptions override configured templates and are not interpolated", async (t) => {
+    const f = createFixture(t);
+    f.config.bitbucket.descriptionTemplate = "missing-template";
+    await f.run([
+        "develop",
+        "--description-file",
+        inputFile(t, "Literal {{commits}}\n"),
+        "--dry-run",
+        "--open",
+    ]);
+    assert.match(String(f.output.mock.calls[0].arguments[0]), /Literal {{commits}}/);
+    assert.equal(f.search.mock.callCount(), 0);
+    assert.equal(f.request.mock.callCount(), 0);
+});
+test("configured templates render generated content and explicit titles", async (t) => {
+    const f = createFixture(t);
+    f.config.bitbucket.descriptionTemplate = inputFile(
+        t,
+        "# {{title}}\n{{sourceBranch}} -> {{targetBranch}}\n{{projectKey}}/{{repository}}\n{{commits}}",
+    );
+    await f.run(["develop", "--title", "Custom", "--dry-run"]);
+    const text = String(f.output.mock.calls[0].arguments[0]);
+    assert.match(
+        text,
+        /# Custom\nfeature\/current -> develop\nPROJECT\/payments\n\* Validate payments/,
+    );
+});
+test("explicit template and no-template override the configured path", async (t) => {
+    for (const args of [["--template", inputFile(t, "Explicit {{title}}")], ["--no-template"]]) {
+        const f = createFixture(t);
+        f.config.bitbucket.descriptionTemplate = "missing-template";
+        await f.run(["develop", "--dry-run", ...args]);
+        assert.equal(f.search.mock.callCount(), 0);
+        assert.equal(f.request.mock.callCount(), 0);
+    }
+});
+test("missing description files fail before fetch or REST", async (t) => {
+    const f = createFixture(t);
+    await assert.rejects(
+        f.run(["develop", "--description-file", "missing-description"]),
+        /Unable to read/,
+    );
+    assert.equal(f.fetch.mock.callCount(), 0);
+    assert.equal(f.search.mock.callCount(), 0);
+});
+test("description and template flags conflict before actions", async (t) => {
+    const f = createFixture(t);
+    await assert.rejects(f.run(["develop", "--description-file", "a", "--template", "b"]));
+    assert.equal(f.fetch.mock.callCount(), 0);
+});
+test("existing PRs return an explicit result without POST", async (t) => {
+    const f = createFixture(t);
+    Object.assign(f.context, { openUrl: async (_url: string) => {} });
+    f.existingPages.push({
+        values: [f.pullRequest],
+        size: 1,
+        limit: 100,
+        start: 0,
+        isLastPage: true,
+    });
+    await f.run(["develop", "--open"]);
+    assert.equal(f.request.mock.callCount(), 0);
+    assert.match(String(f.output.mock.calls[0].arguments[0]), /Existing Pull Request:/);
+});
+test("duplicate search paginates and ignores fork PRs with the same branch names", async (t) => {
+    const f = createFixture(t);
+    const previous = process.exitCode;
+    t.after(() => {
+        process.exitCode = previous;
+    });
+    const fork = structuredClone(f.pullRequest);
+    fork.id = 99;
+    fork.fromRef.repository = { ...fork.fromRef.repository, project: { key: "FORK" } };
+    f.existingPages.push(
+        { values: [fork], size: 1, limit: 100, start: 0, isLastPage: false, nextPageStart: 37 },
+        { values: [f.pullRequest], size: 1, limit: 100, start: 37, isLastPage: true },
+    );
+    await f.run(["develop", "--json"]);
+    const result = JSON.parse(String(f.output.mock.calls[0].arguments[0]));
+    assert.equal(result.data.created, false);
+    assert.equal(result.data.browser, "not-requested");
+    assert.equal(result.data.pullRequest.id, 42);
+    assert.equal(f.request.mock.callCount(), 0);
+    assert.equal(f.search.mock.callCount(), 2);
+    assert.ok(String(f.search.mock.calls[1].arguments[0]).includes("start=37"));
+});
+test("duplicate search failures prevent POST without retrying", async (t) => {
+    const f = createFixture(t);
+    f.search.mock.mockImplementation(async () => Response.json({ errors: [] }, { status: 403 }));
+    await assert.rejects(
+        f.run(["develop"]),
+        (error: unknown) => error instanceof BitbucketApiError && error.statusCode === 403,
+    );
+    assert.equal(f.search.mock.callCount(), 1);
+    assert.equal(f.request.mock.callCount(), 0);
+});
+test("browser failures preserve the created PR in JSON without retrying", async (t) => {
+    const f = createFixture(t);
+    const previous = process.exitCode;
+    t.after(() => {
+        process.exitCode = previous;
+    });
+    Object.assign(f.context, {
+        openUrl: async () => {
+            throw new Error("private-marker");
+        },
+    });
+    await f.run(["develop", "--json", "--open"]);
+    const result = JSON.parse(String(f.output.mock.calls[0].arguments[0]));
+    assert.equal(result.error.code, "BROWSER_OPEN_FAILED");
+    assert.equal(result.data.created, true);
+    assert.equal(result.data.browser, "failed");
+    assert.equal(result.data.pullRequest.id, 42);
+    assert.equal(f.request.mock.callCount(), 1);
+    assert.doesNotMatch(JSON.stringify(result), /private-marker/);
+});
+test("open is opt-in, passes the PR URL, and is skipped in dry-run", async (t) => {
+    for (const dryRun of [false, true]) {
+        const f = createFixture(t);
+        const open = t.mock.fn(async (_url: string) => {});
+        Object.assign(f.context, { openUrl: open });
+        await f.run(["develop", "--open", ...(dryRun ? ["--dry-run"] : [])]);
+        assert.equal(open.mock.callCount(), dryRun ? 0 : 1);
+        if (!dryRun)
+            assert.equal(open.mock.calls[0].arguments[0], f.pullRequest.links.self[0].href);
+    }
 });
 
 test("create-pr fetches and validates remote branches before generating content and posting the Pull Request", async (t) => {

@@ -10,7 +10,7 @@ import {
     rmSync,
 } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join, basename } from "node:path";
+import { dirname, join, basename, resolve } from "node:path";
 
 import { normalizeBitbucketUrl } from "./bitbucket-url.ts";
 import { normalizeSshHostnames } from "./ssh-hostnames.ts";
@@ -20,6 +20,7 @@ import {
     normalizeConfig,
     normalizeText,
     normalizeReviewers,
+    normalizeDescriptionTemplatePath,
     toSnapshot,
     requireConfiguration,
 } from "./config-validation.ts";
@@ -46,6 +47,8 @@ export class ConfigStore {
     get(key: ConfigKey): string | string[] | undefined {
         const config = this.loadRaw();
         switch (key) {
+            case "bitbucket.descriptionTemplate":
+                return normalizeDescriptionTemplatePath(config.bitbucket?.descriptionTemplate);
             case "bitbucket.url":
                 return config.bitbucket?.url === undefined
                     ? undefined
@@ -72,6 +75,11 @@ export class ConfigStore {
         config.git ??= {};
 
         switch (key) {
+            case "bitbucket.descriptionTemplate":
+                config.bitbucket.descriptionTemplate = value.trim()
+                    ? resolve(value.trim())
+                    : undefined;
+                break;
             case "bitbucket.url":
                 config.bitbucket.url = value;
                 break;

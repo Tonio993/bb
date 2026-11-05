@@ -1,7 +1,9 @@
 import { Option } from "commander";
 import type { Command } from "commander";
 
-import { createPullRequest } from "../../bitbucket/pull-requests.ts";
+import { createOrFindPullRequest } from "../../application/create-pull-request.ts";
+import { loadDescriptionInput } from "../description-input.ts";
+import { renderDescriptionTemplate } from "../../pull-request/description-template.ts";
 import { resolvePullRequestBranches } from "../../pull-request/branches.ts";
 import { buildPullRequestContent } from "../../pull-request/pull-request-content.ts";
 import { resolvePullRequestReviewers } from "../../pull-request/reviewers.ts";
@@ -11,7 +13,10 @@ import { usesJsonOutput, writeJsonResult } from "../json-output.ts";
 import { toPullRequestOutput } from "../pull-request-output.ts";
 import type { CreatePullRequestOptions } from "../../bitbucket/pull-request-types.ts";
 import { formatCreatePreview } from "../pull-request-preview-output.ts";
-import type { CreatePullRequestPreviewOutput } from "../json-output-types.ts";
+import type {
+    CreatePullRequestPreviewOutput,
+    CreatePullRequestOutput,
+} from "../json-output-types.ts";
 
 type CreatePrOptions = {
     sourceBranch?: string;
@@ -22,6 +27,9 @@ type CreatePrOptions = {
     reviewer: string[];
     reviewers: boolean;
     dryRun?: boolean;
+    descriptionFile?: string;
+    template?: string | false;
+    open?: boolean;
 };
 
 export function registerCreatePrCommand(program: Command, context: CommandContext): void {
@@ -38,6 +46,22 @@ export function registerCreatePrCommand(program: Command, context: CommandContex
         .option("--source-branch <branch>", "Source branch")
         .option("--target-branch <branch>", "Target branch")
         .option("--title <title>", "Override the generated Pull Request title")
+        .addOption(
+            new Option(
+                "--description-file <path>",
+                "Use a UTF-8 file as the literal description",
+            ).conflicts("template"),
+        )
+        .addOption(
+            new Option("--template <path>", "Render a UTF-8 description template").conflicts([
+                "descriptionFile",
+            ]),
+        )
+        .option("--no-template", "Ignore the configured description template")
+        .option(
+            "--open",
+            "Open the created or existing Pull Request in the browser; ignored in dry-run",
+        )
         .option("--project-key <key>", "Override the detected or configured Bitbucket project")
         .option("--repository <slug>", "Override the repository detected from the Git remote")
         .option(
@@ -105,6 +129,10 @@ async function executeCreatePr(
     });
 
     const remote = context.config.git.remote;
+    const descriptionInput = loadDescriptionInput(
+        options,
+        context.config.bitbucket.descriptionTemplate,
+    );
 
     // Update remote references before validating branches
     // and generating Pull Request content.
@@ -135,7 +163,17 @@ async function executeCreatePr(
 
         title: options.title?.trim() || content.title,
 
-        description: content.description,
+        description:
+            descriptionInput === undefined
+                ? content.description
+                : descriptionInput.kind === "literal"
+                  ? descriptionInput.content
+                  : renderDescriptionTemplate(descriptionInput.content, {
+                        ...repositoryContext,
+                        ...branches,
+                        title: options.title?.trim() || content.title,
+                        commits: content.description,
+                    }),
 
         reviewers,
     };
@@ -149,7 +187,7 @@ async function executeCreatePr(
         else console.log(formatCreatePreview(plan, remote));
         return;
     }
-    const pullRequest = await createPullRequest(context.bitbucketClient, plan);
+    const { pullRequest, created } = await createOrFindPullRequest(context.bitbucketClient, plan);
 
     const url = pullRequest.links.self[0]?.href;
 
@@ -157,8 +195,44 @@ async function executeCreatePr(
         throw new Error("Bitbucket did not provide the created Pull Request URL.");
     }
 
-    if (json) writeJsonResult("create-pr", { pullRequest: toPullRequestOutput(pullRequest) });
-    else console.log(url);
+    let browser: "not-requested" | "opened" | "failed" = "not-requested";
+    if (options.open) {
+        try {
+            const publicUrl = toPullRequestOutput(pullRequest).url;
+            if (!publicUrl || !context.openUrl)
+                throw new Error("The browser opener is unavailable.");
+            await context.openUrl(publicUrl);
+            browser = "opened";
+        } catch {
+            browser = "failed";
+        }
+    }
+    const data: CreatePullRequestOutput = {
+        pullRequest: toPullRequestOutput(pullRequest),
+        created,
+        browser,
+    };
+    if (json)
+        writeJsonResult(
+            "create-pr",
+            data,
+            browser === "failed"
+                ? {
+                      code: "BROWSER_OPEN_FAILED",
+                      message:
+                          "The Pull Request is available, but the browser could not be opened. Use the returned URL; do not repeat creation.",
+                  }
+                : null,
+        );
+    else {
+        console.log(created ? url : "Existing Pull Request: " + url);
+        if (browser === "failed") {
+            console.error(
+                "The Pull Request is available, but the browser could not be opened. Use the printed URL; do not repeat creation.",
+            );
+            process.exitCode = 1;
+        }
+    }
 }
 
 function collectReviewer(value: string, previous: string[]): string[] {

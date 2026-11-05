@@ -5,6 +5,7 @@ export type GetOpenPullRequestOptions = {
     repository: string;
     sourceBranch: string;
     targetBranch: string;
+    sourceRepository?: { projectKey: string; repository: string };
 };
 
 export type GetOpenPullRequestsOptions = {

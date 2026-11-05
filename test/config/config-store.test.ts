@@ -25,6 +25,24 @@ function createStore(t: TestContext): ConfigStore {
     return new ConfigStore(join(directory, "config.json"));
 }
 
+test("description templates persist absolute paths and can be cleared", (t) => {
+    const store = createStore(t);
+    store.set("bitbucket.descriptionTemplate", "templates/pr.md");
+    assert.equal(store.get("bitbucket.descriptionTemplate"), resolve("templates/pr.md"));
+    assert.equal(store.snapshot()["bitbucket.descriptionTemplate"], resolve("templates/pr.md"));
+    store.set("bitbucket.url", "https://bitbucket.example");
+    assert.equal(store.loadRequired().bitbucket.descriptionTemplate, resolve("templates/pr.md"));
+    store.set("bitbucket.descriptionTemplate", "");
+    assert.equal(store.get("bitbucket.descriptionTemplate"), undefined);
+});
+test("raw configuration rejects relative and non-string template paths", (t) => {
+    const store = createStore(t);
+    for (const descriptionTemplate of ["relative/path", 42]) {
+        writeFileSync(store.path, JSON.stringify({ bitbucket: { descriptionTemplate } }));
+        assert.throws(() => store.snapshot(), /description template|descriptionTemplate/);
+    }
+});
+
 test("missing configuration can be read without creating a file", (t) => {
     const store = createStore(t);
 

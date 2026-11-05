@@ -1,4 +1,5 @@
 import { normalizeBitbucketUrl } from "./bitbucket-url.ts";
+import { isAbsolute } from "node:path";
 import { normalizeSshHostnames } from "./ssh-hostnames.ts";
 import { CONFIG_KEYS } from "./config-schema.ts";
 import type { BbConfig, RawConfig, ConfigSnapshot, ConfigKey } from "./config-schema.ts";
@@ -47,6 +48,11 @@ export function normalizeConfig(value: unknown): RawConfig {
     const config: RawConfig = { ...value };
     if (value.bitbucket) {
         config.bitbucket = { ...value.bitbucket };
+        if (value.bitbucket.descriptionTemplate !== undefined) {
+            config.bitbucket.descriptionTemplate = normalizeDescriptionTemplatePath(
+                value.bitbucket.descriptionTemplate,
+            );
+        }
         if (value.bitbucket.url !== undefined) {
             config.bitbucket.url = normalizeBitbucketUrl(value.bitbucket.url);
         }
@@ -79,6 +85,13 @@ export function normalizeText(value: string, label: string): string {
     return normalized;
 }
 
+export function normalizeDescriptionTemplatePath(value: string | undefined): string | undefined {
+    const path = value?.trim();
+    if (path && !isAbsolute(path))
+        throw new Error("The description template configuration must be an absolute path.");
+    return path || undefined;
+}
+
 export function normalizeReviewers(value: readonly string[]): string[] {
     return value.map((reviewer) => reviewer.trim()).filter(Boolean);
 }
@@ -90,6 +103,9 @@ export function toSnapshot(config: RawConfig): ConfigSnapshot {
         "bitbucket.defaultReviewers": config.bitbucket?.defaultReviewers ?? [],
         "bitbucket.sshHostnames": config.bitbucket?.sshHostnames ?? [],
         "git.remote": config.git?.remote ?? "origin",
+        ...(config.bitbucket?.descriptionTemplate
+            ? { "bitbucket.descriptionTemplate": config.bitbucket.descriptionTemplate }
+            : {}),
     };
 }
 
@@ -103,6 +119,9 @@ export function requireConfiguration(config: ConfigSnapshot): BbConfig {
             projectKey,
             defaultReviewers: config["bitbucket.defaultReviewers"],
             sshHostnames: config["bitbucket.sshHostnames"],
+            ...(config["bitbucket.descriptionTemplate"]
+                ? { descriptionTemplate: config["bitbucket.descriptionTemplate"] }
+                : {}),
         },
         git: { remote: config["git.remote"] },
     };

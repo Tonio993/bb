@@ -4,6 +4,7 @@ export type BbConfig = {
         projectKey?: string;
         defaultReviewers: string[];
         sshHostnames: string[];
+        descriptionTemplate?: string;
     };
 
     git: {
@@ -17,6 +18,7 @@ export type RawConfig = {
         projectKey?: string;
         defaultReviewers?: string[];
         sshHostnames?: string[];
+        descriptionTemplate?: string;
     };
 
     git?: {
@@ -30,6 +32,7 @@ export const CONFIG_KEYS = [
     "bitbucket.defaultReviewers",
     "bitbucket.sshHostnames",
     "git.remote",
+    "bitbucket.descriptionTemplate",
 ] as const;
 
 export type ConfigKey = (typeof CONFIG_KEYS)[number];
@@ -40,6 +43,7 @@ export type ConfigSnapshot = {
     readonly "bitbucket.defaultReviewers": string[];
     readonly "bitbucket.sshHostnames": string[];
     readonly "git.remote": string;
+    readonly "bitbucket.descriptionTemplate"?: string;
 };
 
 export function isConfigKey(value: string): value is ConfigKey {
