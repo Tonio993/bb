@@ -2,7 +2,7 @@
 
 CLI interna per Git e Bitbucket Data Center / Server, sviluppata in Node.js e TypeScript.
 
-Il progetto implementa configurazione globale, pass-through Git, ricerca, creazione e merge delle Pull Request. Le API utilizzate sono quelle di Bitbucket Data Center, sotto `/rest/api/latest/`.
+Il progetto implementa configurazione globale, pass-through Git, ricerca, creazione e merge delle Pull Request. Le API utilizzate sono quelle di Bitbucket Data Center, sotto `/rest/api/latest/` e `/rest/branch-utils/latest/` per la cancellazione condizionata dei branch.
 
 ## Requisiti e avvio
 
@@ -355,6 +355,8 @@ node src/main.ts -C "C:\work\payments" merge-pr develop
 node src/main.ts -C "C:\work\payments" merge-pr feature/ABC-123 develop
 node src/main.ts -C "C:\work\payments" merge-pr develop --message-prefix "[RELEASE] "
 node src/main.ts -C "C:\work\payments" merge-pr develop --complete-tasks
+node src/main.ts -C "C:\work\payments" merge-pr develop --delete-source
+node src/main.ts merge-pr feature/ABC-123 develop --project-key PROJECT --repository payments --delete-source
 ```
 
 Il comando cerca la PR aperta e ne rilegge i dettagli aggiornati. Una PR senza reviewer può essere mergiata; con reviewer presenti serve almeno uno stato `APPROVED` e nessuno stato `NEEDS_WORK`.
@@ -365,7 +367,21 @@ Il merge viene richiesto tramite REST con la versione corrente della PR. Bitbuck
 
 `--complete-tasks` completa i task ancora aperti prima del merge. Legge tutte le pagine, recupera la versione aggiornata di ciascun task da modificare e ne imposta lo stato a `RESOLVED`. Poi rilegge la PR e ricontrolla branch, reviewer, stato e versione. L'opzione mantiene attivi i controlli sui reviewer e i merge check del server.
 
-Se il completamento di un task o un passaggio successivo fallisce, i task già completati restano tali. Gli errori di permessi o di versione interrompono l'operazione. Il branch source non viene cancellato: `--delete-source-branch` non è attualmente implementata.
+Se il completamento di un task o un passaggio successivo fallisce, i task già completati restano tali. Gli errori di permessi o di versione interrompono l'operazione.
+
+`--delete-source` richiede la cancellazione del branch remoto source soltanto dopo che Bitbucket ha confermato lo stato `MERGED`. Usa il ref completo e il repository di `fromRef` della PR, anche per un fork, tramite `/rest/branch-utils/latest/`. Il branch locale resta disponibile; con identità e branch espliciti il comando continua a funzionare fuori da un checkout.
+
+Prima del merge la CLI richiede un hash completo `fromRef.latestCommit`, ricavato dalla PR aggiornata; se il dato manca o non è valido, il merge viene interrotto. Dopo il merge controlla che ref, repository e commit corrispondano alla PR validata, poi invia l'hash come `endPoint` con `dryRun: false`. L'API rifiuta la cancellazione se il branch punta a un commit diverso, proteggendo eventuali aggiornamenti concorrenti. Un branch già assente è considerato cancellato quando il server conferma l'operazione con risposta vuota. Restano attivi i permessi e le protezioni dei branch. Il comportamento dell'endpoint e del controllo `endPoint` è descritto nelle [API Data Center](https://developer.atlassian.com/server/bitbucket/rest/v901/api-group-repository/).
+
+L'opzione è combinabile con `--complete-tasks` e `--message-prefix`: task e messaggio vengono gestiti prima del merge, la cancellazione dopo. Senza `--delete-source` il comando non invia richieste di cancellazione. Non vengono effettuati retry automatici.
+
+| Esito                                                   | stdout                 | stderr                   | Exit code |
+| ------------------------------------------------------- | ---------------------- | ------------------------ | --------- |
+| Merge riuscito e cancellazione confermata, se richiesta | URL PR                 | Vuoto                    | `0`       |
+| Merge fallito o non confermato                          | Vuoto                  | Errore                   | `1`       |
+| Merge riuscito, cancellazione fallita o non confermata  | URL PR, se disponibile | Esito parziale esplicito | `1`       |
+
+Un errore della cancellazione non annulla il merge. In caso di esito parziale verificare lo stato del branch sul server prima di ripetere la sola cancellazione; un timeout può essere avvenuto dopo la sua rimozione. Un errore HTTP 404 non viene interpretato automaticamente come branch assente, perché può indicare un endpoint o un repository non accessibile. La compatibilità con versione, permessi e policy del server aziendale richiede una prova dedicata su una PR e un branch di test.
 
 In caso di successo viene stampato soltanto l'URL della PR mergiata.
 
@@ -377,7 +393,7 @@ Il pass-through `git` propaga l'exit code del processo Git. Le PR non trovate da
 
 La CLI ripristina la directory e svuota la cache del token anche nei percorsi di help ed errore. Le paginazioni con indici mancanti, non interi o che non avanzano vengono interrotte con errore.
 
-Ogni richiesta REST Bitbucket ha un timeout di 60 secondi, che copre anche la lettura del corpo della risposta. Il limite riguarda la singola richiesta, non l'intero comando. Gli errori conservano metodo, percorso e status HTTP quando disponibile. Non vengono eseguiti retry automatici: dopo un timeout durante creazione, merge o aggiornamento di un task, verificare lo stato sul server prima di ripetere l'operazione.
+Ogni richiesta REST Bitbucket ha un timeout di 60 secondi, che copre anche la lettura del corpo della risposta. Il limite riguarda la singola richiesta, non l'intero comando. Gli errori conservano metodo, percorso e status HTTP quando disponibile. Non vengono eseguiti retry automatici: dopo un timeout durante creazione, merge, cancellazione di un branch o aggiornamento di un task, verificare lo stato sul server prima di ripetere l'operazione.
 
 Le risposte di successo devono contenere JSON valido, salvo i corpi vuoti consentiti dalle singole operazioni. I moduli REST verificano struttura delle pagine, repository, PR, reviewer, task e suggerimenti del messaggio di merge prima di utilizzarli. Una pagina HTML di login o una risposta incompleta produce un errore esplicito anziché un errore di accesso ai campi. Gli errori di JSON malformato non mostrano il contenuto ricevuto. Una risposta non valida dopo una scrittura non implica che il server abbia annullato l'operazione.
 
@@ -395,7 +411,7 @@ Le prove di discovery eseguono Git reale in repository temporanei, escludendo co
 
 I comandi dipendono da contratti strutturali ottenuti con `Pick`, così i test possono fornire semplici oggetti con i metodi necessari. I test di `BitbucketClient` iniettano `fetch` nelle opzioni del costruttore; quelli di `GitClient` iniettano `execute` nel quarto argomento opzionale, senza sostituire le funzioni globali di rete o processo. In esecuzione normale i client usano le API native Node. `npm test` seleziona `test/**/*.test.ts` ed esclude gli helper condivisi dalla scoperta delle suite.
 
-La verifica del pacchetto installabile è separata e si avvia con `npm run test:package`. Include help delle nuove opzioni repository, lettura e scrittura della configurazione SSH e ricerca PR sul JavaScript installato senza progetto globale, sia da remote simulato sia con identità manuale fuori dal checkout. Non contatta Bitbucket né usa portachiavi personali.
+La verifica del pacchetto installabile è separata e si avvia con `npm run test:package`. Include help delle opzioni repository e `--delete-source`, lettura e scrittura della configurazione SSH e ricerca PR sul JavaScript installato senza progetto globale, sia da remote simulato sia con identità manuale fuori dal checkout. Verifica inoltre merge e cancellazione del source di un fork, con successo completo, esito parziale, merge rifiutato e merge non confermato, controllando ordine delle richieste, output ed exit code. Non contatta Bitbucket né usa portachiavi personali.
 
 `npm run test:git` verifica l'installazione da un repository Git temporaneo senza `dist/` né `node_modules/`, usando un prefisso isolato. La prova richiede npm >=12.2.1, scarica le dipendenze di build dal registry npm, verifica il launcher e l'assenza delle dipendenze di sviluppo nel pacchetto installato. È separata dalla suite offline e viene eseguita nella matrice CI su tutte e tre le piattaforme. Per eseguirla con la versione npm fissata dalla CI senza aggiornare l'installazione globale usare `npm exec --yes --package=npm@12.2.1 -- npm run test:git`.
 

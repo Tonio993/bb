@@ -46,6 +46,7 @@ src/
       remote-diagnostics.ts
       doctor-types.ts
     merge-pull-request.ts
+    merge-pull-request-types.ts
   diagnostics/
     executable.ts
     npm-version.ts
@@ -76,6 +77,8 @@ src/
     response-parsers.ts
     pagination.ts
     repositories.ts
+    branches.ts
+    branch-types.ts
     pull-request-types.ts
     pull-request-search.ts
     pull-requests.ts
@@ -194,7 +197,9 @@ Il backend Windows rimuove anche `PSModulePath` dall'environment figlio, senza m
 
 ## Trasporto Bitbucket
 
-Il server è Bitbucket Data Center, con API `/rest/api/latest/`. Tutte le richieste passano da `BitbucketClient`: URL base e context path, Bearer, header JSON, serializzazione, lettura e gestione errori sono centralizzati. I comandi non invocano `fetch`.
+Il server è Bitbucket Data Center, con API `/rest/api/latest/` e `/rest/branch-utils/latest/` per la cancellazione condizionata dei branch. Tutte le richieste passano da `BitbucketClient`: URL base e context path, Bearer, header JSON, serializzazione, lettura e gestione errori sono centralizzati. I comandi non invocano `fetch`.
+
+Il contratto strutturale `BitbucketApi` comprende GET, POST, PUT e DELETE. `delete` accetta un body JSON opzionale e un parser, mantenendo l'overload preesistente con il solo parser come secondo argomento. Una risposta 204 senza contenuto resta `undefined`. `bitbucket/branches.ts` e `branch-types.ts` possiedono operazione e opzioni di cancellazione; richiedono ref completo, progetto, repository e commit atteso, inviati al modulo `branch-utils` con `dryRun: false`. Il parser dell'operazione rifiuta corpi di successo inattesi.
 
 `BitbucketClient` riceve soltanto l'URL base, il provider del token e le opzioni di trasporto: non richiede project key o reviewer, che appartengono ai comandi. Il client diagnostico non usa valori fittizi di configurazione.
 
@@ -254,7 +259,7 @@ I reviewer configurati sono il default. `--reviewer` ripetibile o separato da vi
 
 `mergeOpenPullRequest` orchestra ricerca, rilettura, validazione, task opzionali, messaggio e merge. I moduli REST espongono operazioni su PR, suggerimento del messaggio e task; le regole pure risiedono in `pull-request/merge-validation.ts`. Non introdurre checkout, pull, merge locale, push o stash.
 
-Il merge usa `POST .../pull-requests/{id}/merge` con versione corrente e rispetta i merge check del server. Una PR senza reviewer è ammessa; se sono presenti, ne serve almeno uno `APPROVED`. Qualunque `NEEDS_WORK` blocca il merge.
+Il merge usa `POST .../pull-requests/{id}/merge` con versione corrente e rispetta i merge check del server. La risposta deve confermare `MERGED` per lo stesso ID richiesto. Una PR senza reviewer è ammessa; se sono presenti, ne serve almeno uno `APPROVED`. Qualunque `NEEDS_WORK` blocca il merge.
 
 `--message-prefix` si applica al messaggio effettivo creato da Bitbucket: leggere il suggerimento, anteporre il prefisso e inviare il messaggio esplicito evitando un secondo subject automatico quando supportato.
 
@@ -267,6 +272,14 @@ Senza `--complete-tasks` i task non vengono modificati. Con l'opzione:
 5. Rileggere la PR e ricontrollare branch, stato, versione e reviewer prima del merge.
 
 Un errore o conflitto interrompe il flusso senza tentare il merge; i task già risolti restano risolti. L'opzione non disattiva reviewer o merge check e non giustifica retry che sovrascrivano modifiche concorrenti.
+
+`--delete-source` viene passato dalla CLI a `MergeOpenPullRequestOptions` in `application/merge-pull-request-types.ts`. `BitbucketPullRequestRef.latestCommit` è opzionale nel modello generale e validato come stringa quando presente. Le regole pure di `merge-validation.ts` richiedono, solo per la cancellazione, un hash completo, un ref branch e un'identità source validi, diversi dal branch target. Questi prerequisiti vengono verificati prima di modificare i task e di nuovo sulla PR aggiornata prima del merge. La rilettura dopo i task deve conservare anche le identità dei repository source e target, oltre ai ref.
+
+Dopo la risposta `MERGED`, il workflow confronta ref, repository e commit con la PR usata per il merge. Soltanto se corrispondono invoca DELETE sul repository di `fromRef`, usando il commit validato come `endPoint`. Non rilegge il branch per sostituire il commit atteso: il vincolo deve proteggere eventuali commit arrivati dopo lo snapshot. L'endpoint ufficiale [Delete branch](https://developer.atlassian.com/server/bitbucket/rest/v901/api-group-repository/) restituisce risposta vuota anche se il branch è già assente e rifiuta un commit diverso. Errori 404, permessi, protezioni, conflitti, timeout e risposte inattese restano fallimenti; nessun retry automatico.
+
+`MergeOpenPullRequestResult` contiene la PR mergiata e lo stato `sourceDeletion`: `not-requested`, `deleted` oppure `failed`, con `Error` originale nel terzo caso. Errori prima della conferma del merge vengono propagati; dopo la conferma, errori o incoerenze della cancellazione producono un risultato parziale. Il workflow non stampa e non imposta exit code. Il registrar stampa l'URL quando disponibile, segnala su stderr che il merge è riuscito ma la cancellazione è fallita o non confermata e imposta exit code `1`. In caso di successo completo mantiene l'output composto dal solo URL. Nessun processo Git o modifica del branch locale viene introdotto per la cancellazione.
+
+I test coprono trasporto DELETE con body e overload parser, endpoint branch-utils, metadati della PR, commit atteso, fork, protezioni, errori, timeout ed esiti parziali. `test:package` esegue anche il JavaScript installato per merge e cancellazione con risposte simulate: successo, cancellazione rifiutata, merge rifiutato e merge non confermato, verificando stdout, stderr, exit code e assenza di processi Git nel caso manuale.
 
 ## Build, distribuzione e verifica
 
@@ -286,4 +299,4 @@ Il job `package` dipende dal successo dell'intera matrice `verify`. Su un checko
 
 La cache del package manager in `actions/setup-node` è disabilitata esplicitamente in entrambi i job. Il ripristino della cache npm ha bloccato un'esecuzione prima di `npm ci`, con download a zero byte ed errore del servizio `Egress is over the account limit`. Le dipendenze vengono installate dal lockfile tramite il registry; la generazione del pacchetto non dipende dal ripristino della cache GitHub Actions.
 
-I backend macOS e Linux sono verificati tramite tool simulati e richiedono prove native nei rispettivi ambienti. Restano da verificare i flussi autenticati contro il server aziendale e da scegliere il canale interno di release. La cancellazione del source branch non è implementata e va valutata separatamente.
+I backend macOS e Linux sono verificati tramite tool simulati e richiedono prove native nei rispettivi ambienti. Restano da verificare i flussi autenticati contro il server aziendale, compresi permessi e protezione dei commit nella cancellazione del source branch, e da scegliere il canale interno di release.
