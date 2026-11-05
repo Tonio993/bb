@@ -69,6 +69,7 @@ for (const command of [
     ["pr"],
     ["pr", "list"],
     ["pr", "show"],
+    ["pr", "checks"],
     ["config"],
     ["config", "list"],
     ["config", "init"],
@@ -118,6 +119,7 @@ for (const command of [
 }
 
 const invalidArguments = [
+    ["pr", "checks"],
     ["pr", "list", "--state", "unknown"],
     ["pr", "show"],
     ["get-pr-url", "feature/test", "develop", "--repository"],

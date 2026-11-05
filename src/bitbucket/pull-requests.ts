@@ -3,6 +3,7 @@ import type {
     BitbucketCommitMessageSuggestion,
     BitbucketPullRequest,
     BitbucketPullRequestDetails,
+    BitbucketMergeability,
 } from "./bitbucket-types.ts";
 import type {
     CreatePullRequestOptions,
@@ -13,7 +14,15 @@ import {
     parseCommitMessageSuggestion,
     parsePullRequest,
     parsePullRequestDetails,
+    parseMergeability,
 } from "./response-parsers.ts";
+
+export async function getPullRequestMergeability(
+    client: Pick<BitbucketApi, "get">,
+    identity: PullRequestIdentity,
+): Promise<BitbucketMergeability> {
+    return client.get(getPullRequestPath(identity) + "/merge", parseMergeability);
+}
 
 export async function getPullRequestDetails(
     client: Pick<BitbucketApi, "get">,

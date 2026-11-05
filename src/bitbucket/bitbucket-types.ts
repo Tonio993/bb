@@ -64,3 +64,10 @@ export type BitbucketPage<T> = {
     isLastPage: boolean;
     nextPageStart?: number;
 };
+
+export type BitbucketMergeability = {
+    canMerge: boolean;
+    conflicted: boolean;
+    outcome?: string;
+    vetoes: { summaryMessage: string; detailedMessage?: string }[];
+};

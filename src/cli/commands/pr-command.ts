@@ -10,6 +10,11 @@ import {
 } from "../../repository/pull-request-reference.ts";
 import { usesJsonOutput, writeJsonResult } from "../json-output.ts";
 import { formatPullRequestView, toPullRequestViewOutput } from "../pull-request-view-output.ts";
+import { checkPullRequest } from "../../application/check-pull-request.ts";
+import {
+    formatPullRequestChecks,
+    toPullRequestChecksOutput,
+} from "../pull-request-check-output.ts";
 
 type RepositoryOptions = { projectKey?: string; repository?: string };
 type ListOptions = RepositoryOptions & { state: PullRequestListState; author?: string };
@@ -19,6 +24,43 @@ export function registerPrCommand(program: Command, context: CommandContext): vo
         .command("pr")
         .description("Inspect Pull Requests using read-only Bitbucket requests.")
         .option("--json", "Output a versioned JSON result for scripts and CI");
+    pr.command("checks")
+        .description(
+            "Check local merge requirements and Bitbucket mergeability using read-only requests.",
+        )
+        .argument("<id-or-url>", "Pull Request ID or HTTP(S) URL")
+        .option("--json", "Output a versioned JSON result for scripts and CI")
+        .option("--project-key <key>", "Override the detected or configured Bitbucket project")
+        .option("--repository <slug>", "Override the repository detected from the Git remote")
+        .addHelpText(
+            "after",
+            "\nExit code: 0 when ready, 1 for blockers or failed checks. Open tasks are warnings unless server policy blocks them.\nNo writes, task completion, fetch, or merge are performed. A successful check does not guarantee a later merge.\n",
+        )
+        .action(async (value: string, options: RepositoryOptions, command: Command) => {
+            const reference = parsePullRequestReference(value);
+            const identity = resolvePullRequestIdentity(
+                context.config,
+                () => context.gitClient,
+                reference,
+                options,
+            );
+            const result = await checkPullRequest(context.bitbucketClient, identity);
+            if (usesJsonOutput(command)) {
+                writeJsonResult(
+                    "pr checks",
+                    toPullRequestChecksOutput(result),
+                    result.readyForMerge
+                        ? null
+                        : {
+                              code: "MERGE_CHECK_FAILED",
+                              message: "One or more merge requirements are not satisfied.",
+                          },
+                );
+            } else {
+                console.log(formatPullRequestChecks(result));
+                process.exitCode = result.readyForMerge ? 0 : 1;
+            }
+        });
     pr.command("list")
         .description(
             "List incoming Pull Requests in the selected repository, including reviewers and open tasks.",

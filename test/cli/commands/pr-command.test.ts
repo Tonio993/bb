@@ -127,6 +127,143 @@ function fixture(t: TestContext) {
     };
 }
 const root = "/context/rest/api/latest/projects/PROJECT/repos/payments/pull-requests";
+const mergeable = { canMerge: true, conflicted: false, outcome: "CLEAN", vetoes: [] };
+
+for (const json of [false, true]) {
+    test("pr checks reports readiness without Git or writes, json=" + json, async (t) => {
+        const f = fixture(t);
+        f.responses.push({ body: f.pr }, { body: f.page(f.tasks) }, { body: mergeable });
+        Object.defineProperty(f.context, "gitClient", {
+            get() {
+                throw new Error("Git must remain lazy.");
+            },
+        });
+        await f.run([...(json ? ["--json"] : []), "pr", "checks", f.pr.links.self[0].href]);
+        assert.equal(process.exitCode, 0);
+        assert.deepEqual(f.requests, [
+            { path: root + "/42", method: "GET" },
+            { path: root + "/42/blocker-comments?start=0&limit=100", method: "GET" },
+            { path: root + "/42/merge", method: "GET" },
+        ]);
+        if (json) {
+            const result = f.json();
+            assert.equal(result.command, "pr checks");
+            assert.equal(result.ok, true);
+            assert.equal(result.data.readyForMerge, true);
+            assert.equal(
+                result.data.checks.find((check: { code: string }) => check.code === "TASKS").status,
+                "WARN",
+            );
+            assert.doesNotMatch(JSON.stringify(result), /private-marker|emailAddress/);
+        } else {
+            const output = String(f.output.mock.calls[0].arguments[0]);
+            assert.match(output, /\[WARN\] TASKS/);
+            assert.match(output, /Ready for merge at the time/);
+        }
+    });
+}
+test("all task pages are read before querying server checks", async (t) => {
+    const f = fixture(t);
+    f.responses.push(
+        { body: f.pr },
+        { body: { ...f.page([]), isLastPage: false, nextPageStart: 37 } },
+        { body: f.page([f.tasks[0]]) },
+        { body: mergeable },
+    );
+    await f.run(["pr", "checks", "42", "--json"]);
+    assert.equal(f.json().data.pullRequest.openTasks.length, 1);
+    assert.equal(f.requests[2].path, root + "/42/blocker-comments?start=37&limit=100");
+    assert.equal(f.requests[3].path, root + "/42/merge");
+});
+for (const status of ["UNAPPROVED", "NEEDS_WORK"]) {
+    test("local reviewer blockers preserve the complete server report: " + status, async (t) => {
+        const f = fixture(t);
+        f.responses.push(
+            { body: { ...f.pr, reviewers: [{ status }] } },
+            { body: f.page([]) },
+            { body: mergeable },
+        );
+        await f.run(["pr", "checks", "42", "--json"]);
+        const result = f.json();
+        assert.equal(result.error.code, "MERGE_CHECK_FAILED");
+        assert.equal(result.data.readyForMerge, false);
+        assert.equal(result.data.server.canMerge, true);
+        assert.equal(process.exitCode, 1);
+        assert.equal(f.requests.length, 3);
+    });
+}
+for (const state of ["MERGED", "DECLINED"]) {
+    test("closed PR skips server mergeability: " + state, async (t) => {
+        const f = fixture(t);
+        f.responses.push({ body: { ...f.pr, state } }, { body: f.page([]) });
+        await f.run(["--json", "pr", "checks", "42"]);
+        const result = f.json();
+        assert.equal(result.error.code, "MERGE_CHECK_FAILED");
+        assert.equal(result.data.server, null);
+        assert.equal(f.requests.length, 2);
+    });
+}
+for (const json of [false, true]) {
+    test("server conflicts and vetoes cause failure with details, json=" + json, async (t) => {
+        const f = fixture(t);
+        f.responses.push(
+            { body: f.pr },
+            { body: f.page([]) },
+            {
+                body: {
+                    canMerge: false,
+                    conflicted: true,
+                    outcome: "CONFLICTED",
+                    vetoes: [
+                        {
+                            summaryMessage: "Build required",
+                            detailedMessage: "Wait for CI",
+                            extra: "private-marker",
+                        },
+                    ],
+                    extra: "private-marker",
+                },
+            },
+        );
+        await f.run([...(json ? ["--json"] : []), "pr", "checks", "42"]);
+        assert.equal(process.exitCode, 1);
+        if (json) {
+            const result = f.json();
+            assert.equal(result.error.code, "MERGE_CHECK_FAILED");
+            assert.equal(result.data.server.vetoes[0].detailedMessage, "Wait for CI");
+            assert.doesNotMatch(JSON.stringify(result), /private-marker/);
+        } else {
+            assert.match(
+                String(f.output.mock.calls[0].arguments[0]),
+                /Veto: Build required - Wait for CI/,
+            );
+        }
+    });
+}
+for (const status of [401, 403, 404, 409, 500, 501]) {
+    test("mergeability HTTP failure is not a successful report: " + status, async (t) => {
+        const f = fixture(t);
+        f.responses.push(
+            { body: f.pr },
+            { body: f.page([]) },
+            { status, body: { errors: [{ message: "private-marker" }] } },
+        );
+        await f.run(["--json", "pr", "checks", "42"]);
+        const result = f.json();
+        assert.equal(result.data, null);
+        assert.equal(result.error.httpStatus, status);
+        assert.equal(result.error.method, "GET");
+        assert.equal(f.requests.length, 3);
+        assert.doesNotMatch(JSON.stringify(result), /private-marker/);
+    });
+}
+test("checks rejects mismatching PR identity before task or server reads", async (t) => {
+    const f = fixture(t);
+    f.responses.push({ body: { ...f.pr, id: 43 } });
+    await f.run(["--json", "pr", "checks", "42"]);
+    assert.equal(f.json().ok, false);
+    assert.equal(f.requests.length, 1);
+});
 
 for (const state of ["MERGED", "DECLINED"]) {
     test("pr list requests historical state " + state, async (t) => {

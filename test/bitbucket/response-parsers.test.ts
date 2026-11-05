@@ -7,6 +7,7 @@ import {
     createPullRequest,
     getPullRequest,
     getPullRequestDetails,
+    getPullRequestMergeability,
 } from "../../src/bitbucket/pull-requests.ts";
 import { getOpenPullRequest } from "../../src/bitbucket/pull-request-search.ts";
 import { getProjectRepositories } from "../../src/bitbucket/repositories.ts";
@@ -24,6 +25,52 @@ const pr = {
     links: { self: [{ href: "https://bitbucket.example/pull-requests/42" }] },
 };
 const page = { values: [repository], size: 1, limit: 100, start: 0, isLastPage: true };
+
+for (const response of [
+    { canMerge: true, conflicted: false, vetoes: [] },
+    { outcome: "CLEAN", conflicted: false, vetoes: [] },
+    { outcome: "FUTURE_OUTCOME", conflicted: false, vetoes: [] },
+    { outcome: "CLEAN", conflicted: true, vetoes: [] },
+]) {
+    test(
+        "mergeability validates and normalizes documented decisions " + JSON.stringify(response),
+        async (t) => {
+            const f = api(t, { ...response, extra: "private-marker" });
+            const result = await getPullRequestMergeability(f.client, identity);
+            assert.equal(
+                result.canMerge,
+                response.canMerge === true ||
+                    (response.outcome === "CLEAN" && !response.conflicted),
+            );
+            assert.doesNotMatch(JSON.stringify(result), /private-marker/);
+            assert.equal(
+                new URL(String(f.request.mock.calls[0].arguments[0])).pathname,
+                "/rest/api/latest/projects/PROJECT/repos/payments/pull-requests/42/merge",
+            );
+        },
+    );
+}
+for (const response of [
+    null,
+    [],
+    {},
+    { canMerge: true, vetoes: [] },
+    { canMerge: "true", conflicted: false, vetoes: [] },
+    { conflicted: false, vetoes: [] },
+    { canMerge: true, conflicted: false, vetoes: {} },
+    { canMerge: true, conflicted: false, vetoes: [{}] },
+    {
+        canMerge: true,
+        conflicted: false,
+        vetoes: [{ summaryMessage: "Blocked", detailedMessage: 42 }],
+    },
+    { canMerge: true, conflicted: false, outcome: 42, vetoes: [] },
+]) {
+    test("invalid mergeability never becomes readiness " + JSON.stringify(response), async (t) => {
+        const f = api(t, response);
+        await assert.rejects(getPullRequestMergeability(f.client, identity), invalidResponse);
+    });
+}
 
 for (const metadata of [
     { title: 42 },

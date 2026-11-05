@@ -1,4 +1,5 @@
 import type { BitbucketUser } from "../bitbucket/bitbucket-types.ts";
+import type { MergeCheck } from "../pull-request/merge-check-types.ts";
 
 export type JsonErrorCode =
     | "CLI_ARGUMENT_ERROR"
@@ -16,6 +17,7 @@ export type JsonErrorCode =
     | "INVALID_RESPONSE"
     | "GIT_ERROR"
     | "DIAGNOSTIC_FAILED"
+    | "MERGE_CHECK_FAILED"
     | "SOURCE_DELETION_FAILED";
 
 export type JsonError = {
@@ -53,4 +55,16 @@ export type PullRequestViewOutput = Omit<PullRequestOutput, "reviewers"> & {
     author: BitbucketUser;
     reviewers: { status: string; user: BitbucketUser | null }[];
     openTasks: { id: number; text: string | null }[];
+};
+
+export type PullRequestChecksOutput = {
+    pullRequest: PullRequestViewOutput;
+    readyForMerge: boolean;
+    checks: MergeCheck[];
+    server: {
+        canMerge: boolean;
+        conflicted: boolean;
+        outcome: string | null;
+        vetoes: { summaryMessage: string; detailedMessage: string | null }[];
+    } | null;
 };

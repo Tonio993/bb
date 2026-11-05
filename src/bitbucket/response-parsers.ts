@@ -8,6 +8,7 @@ import type {
     BitbucketRepository,
     BitbucketUser,
     BitbucketPullRequestDetails,
+    BitbucketMergeability,
 } from "./bitbucket-types.ts";
 
 function object(value: unknown, description: string): Record<string, unknown> {
@@ -29,6 +30,44 @@ function integer(value: unknown, field: string, minimum = 0): number {
         throw new Error(`Bitbucket did not provide a valid ${field}.`);
     }
     return value;
+}
+
+export function parseMergeability(value: unknown): BitbucketMergeability {
+    const result = object(value, "Pull Request mergeability");
+    if (typeof result.conflicted !== "boolean" || !Array.isArray(result.vetoes)) {
+        throw new Error("Bitbucket did not provide valid mergeability conflicts and vetoes.");
+    }
+    const outcome =
+        result.outcome === undefined ? undefined : text(result.outcome, "merge outcome");
+    if (result.canMerge !== undefined && typeof result.canMerge !== "boolean") {
+        throw new Error("Bitbucket did not provide a boolean canMerge value.");
+    }
+    if (result.canMerge === undefined && outcome === undefined) {
+        throw new Error("Bitbucket did not provide a mergeability decision.");
+    }
+    const vetoes = result.vetoes.map((value) => {
+        const veto = object(value, "a merge veto");
+        return {
+            summaryMessage: text(veto.summaryMessage, "merge veto summary"),
+            ...(veto.detailedMessage === undefined
+                ? {}
+                : {
+                      detailedMessage:
+                          typeof veto.detailedMessage === "string"
+                              ? veto.detailedMessage
+                              : text(veto.detailedMessage, "merge veto detail"),
+                  }),
+        };
+    });
+    return {
+        canMerge:
+            result.canMerge === undefined
+                ? outcome === "CLEAN" && !result.conflicted && vetoes.length === 0
+                : result.canMerge,
+        conflicted: result.conflicted,
+        ...(outcome === undefined ? {} : { outcome }),
+        vetoes,
+    };
 }
 
 export function parseRepository(value: unknown): BitbucketRepository {
