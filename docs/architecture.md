@@ -32,6 +32,7 @@ src/
     json-errors.ts
     pull-request-output.ts
     pull-request-view-output.ts
+    pull-request-check-output.ts
     token-input.ts
     commands/
       index.ts
@@ -55,6 +56,8 @@ src/
     merge-pull-request-types.ts
     read-pull-requests.ts
     pull-request-view-types.ts
+    check-pull-request.ts
+    pull-request-check-types.ts
   diagnostics/
     executable.ts
     npm-version.ts
@@ -103,6 +106,8 @@ src/
     pull-request-content.ts
     review-validation.ts
     merge-validation.ts
+    merge-checks.ts
+    merge-check-types.ts
     merge-commit-message.ts
 test/
   cli/
@@ -144,7 +149,7 @@ L'help esplicito termina con successo; in modalità testuale parsing e errori ap
 
 ## Output JSON
 
-Il contratto pubblico versionato è in [json-output.md](json-output.md); la numerazione delle evolutive è conservata in [roadmap.md](roadmap.md). Il formato è opt-in tramite `--json` globale prima del comando oppure locale sui sette comandi supportati: `get-pr-url`, `get-pr-urls`, `create-pr`, `merge-pr`, `doctor`, `pr list` e `pr show`. Le opzioni locali sono dichiarate nei rispettivi registrar. Commander resta responsabile del parsing: non si cercano flag nell'array degli argomenti e non si aggiunge routing sui nomi dei comandi.
+Il contratto pubblico versionato è in [json-output.md](json-output.md); la numerazione delle evolutive è conservata in [roadmap.md](roadmap.md). Il formato è opt-in tramite `--json` globale prima del comando oppure locale sugli otto comandi supportati: `get-pr-url`, `get-pr-urls`, `create-pr`, `merge-pr`, `doctor`, `pr list`, `pr show` e `pr checks`. Le opzioni locali sono dichiarate nei rispettivi registrar. Commander resta responsabile del parsing: non si cercano flag nell'array degli argomenti e non si aggiunge routing sui nomi dei comandi.
 
 `json-output-types.ts` definisce envelope, codici di errore e proiezione delle PR. `json-output.ts` legge gli option values di Commander, ricava il nome canonico dai parent e scrive un solo documento su stdout, impostando exit code `0` o `1`. `pull-request-output.ts` proietta solo metadati PR documentati: nessuna serializzazione diretta delle response REST. I link vengono limitati a HTTP(S), senza userinfo, query o fragment, con `null` per link non disponibili o non validi. Le identità source e target restano distinte per supportare i fork.
 
@@ -285,6 +290,16 @@ Con un solo branch posizionale, il source è quello corrente e il target è l'ar
 `buildPullRequestContent(commits, sourceBranch)` è pura, accetta dati readonly e non modifica input né invoca Git. Con un solo commit usa il subject come titolo, altrimenti il source branch. La descrizione resta una lista Markdown anche per un solo commit, con il body annidato e `&nbsp;` fra i commit. Un confronto vuoto produce un errore che conserva i riferimenti source e target.
 
 I reviewer configurati sono il default. `--reviewer` ripetibile o separato da virgole li sostituisce; `--no-reviewers` li disabilita. Le due opzioni sono incompatibili. La semantica Commander `options.reviewers === false` è mantenuta.
+
+## Verifica preventiva del merge
+
+Il registrar `pr-command.ts` aggiunge `checks <id-or-url>` con la stessa risoluzione di `show`. `application/check-pull-request.ts` riusa la vista PR/task, poi legge la mergeability soltanto se la PR è aperta. Riceve esclusivamente `Pick<BitbucketApi, "get">`; non intercetta errori di trasporto per trasformarli in controlli favorevoli. `pull-request-check-types.ts` contiene il risultato applicativo. Il flusso non chiama Git dopo la risoluzione dell'identità, non completa task e non esegue scritture o retry.
+
+`pull-requests.ts` espone `getPullRequestMergeability` tramite `GET .../pull-requests/{id}/merge`. `parseMergeability` richiede conflitti booleani, array dei veto validato e una decisione: `canMerge` booleano oppure `outcome` stringa. Proietta solo i campi pubblici di `BitbucketMergeability`; se manca `canMerge`, lo deriva da outcome `CLEAN`, assenza di conflitti e veto. Un outcome sconosciuto resta conservato e non consente un esito favorevole. Le forme documentate sono nelle [REST API Data Center](https://developer.atlassian.com/server/bitbucket/rest/v814/api-group-pull-requests/) e nella [documentazione REST 7.19](https://docs.atlassian.com/bitbucket-server/rest/7.19.0/bitbucket-rest.html); la compatibilità aziendale resta da verificare.
+
+`pull-request/merge-checks.ts` valuta stato, versione, reviewer, task e risultato server senza I/O. Riusa `assertPullRequestReview`, mantenendo la stessa policy di `merge-pr`. I task aperti sono avvisi, perché il workflow attuale delega il loro blocco al server. I contratti di codici e stati sono in `merge-check-types.ts`. Il risultato è favorevole soltanto in assenza di `FAIL` e con controllo server `PASS`; un controllo server saltato non conta come successo. Le letture non sono atomiche e non garantiscono permessi di scrittura o un successivo merge.
+
+`cli/pull-request-check-output.ts` proietta il contratto JSON e formatta il rapporto testuale, eliminando i controlli terminale dai messaggi. Un risultato negativo preserva il rapporto con `MERGE_CHECK_FAILED`; gli errori di lettura seguono la gestione JSON ordinaria con dati null. Il workflow di merge rimane indipendente e continua ad applicare i controlli al momento della scrittura. I test puri verificano la coerenza delle regole reviewer; quelli CLI coprono richieste GET, paginazione, skip su PR chiuse, veto, conflitti ed errori HTTP. Il tarball installato viene provato in testo e JSON con esiti favorevoli e bloccati, usando credenziali e HTTP simulati.
 
 ## Merge PR
 

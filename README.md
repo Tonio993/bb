@@ -282,6 +282,7 @@ Per verificare il riconoscimento sul server aziendale usare una PR aperta nota e
 | `doctor`                        | Controlla strumenti locali e configurazione            |
 | `pr list`                       | Elenca le PR del repository con filtri e task aperti   |
 | `pr show <id-or-url>`           | Consulta una PR tramite ID o URL Bitbucket             |
+| `pr checks <id-or-url>`         | Verifica requisiti locali e impedimenti del merge      |
 | `config list`                   | Elenca impostazioni e percorso del file                |
 | `config init`                   | Configura le impostazioni in modo interattivo          |
 | `token set [--stdin]`           | Salva il token con input nascosto o da una pipe        |
@@ -349,6 +350,22 @@ Dal checkout sostituire `bb` con `node src/main.ts`. Entrambi i comandi mostrano
 `pr show` accetta un ID intero positivo, risolto nel repository selezionato, oppure un URL web HTTP(S) del server configurato. L'URL fornisce progetto e repository senza interrogare Git; deve coincidere con origine e context path di `bitbucket.url`. Sono supportati anche repository personali (`/users/<utente>/repos/...`) e i suffissi di vista `overview`, `diff`, `commits`, `activities` e `activity`. Query e fragment vengono ignorati; credenziali incorporate e override in conflitto vengono rifiutati. Con ID e identità manuale completa non si interroga Git. Una PR assente o non accessibile produce un errore, non un risultato vuoto.
 
 Si eseguono soltanto GET tramite il client Bitbucket: pagine delle PR o dettaglio della singola PR, poi pagine dei task per ciascuna PR selezionata. I task aperti sono i blocker con stato `OPEN`; task risolti e commenti ordinari sono esclusi. Le letture sono sequenziali e non costituiscono una fotografia atomica né una verifica preventiva del merge. Un errore interrompe il risultato senza stampare una lista parziale. `--json` restituisce gli stessi dati nel [contratto versionato](docs/json-output.md), senza email o response REST complete.
+
+### Verifica preventiva del merge
+
+```powershell
+bb pr checks 42
+bb pr checks 42 --project-key PROJECT --repository payments
+bb --json pr checks "https://bitbucket.example/context/projects/PROJECT/repos/payments/pull-requests/42"
+```
+
+Dal checkout sostituire `bb` con `node src/main.ts`. La selezione per ID o URL e gli override seguono le stesse regole di `pr show`. Con URL o identità manuale completa non viene interrogato Git. Il comando legge la PR, tutte le pagine dei task e, se la PR è aperta, la mergeability tramite `GET .../pull-requests/{id}/merge`, documentata nelle [API Data Center](https://developer.atlassian.com/server/bitbucket/rest/v814/api-group-pull-requests/). Non esegue fetch, completamento task, merge o altre scritture.
+
+Il rapporto usa `PASS`, `WARN`, `FAIL` e `SKIP` per stato aperto, disponibilità della versione, reviewer, task e decisione del server. Riutilizza la regola reviewer del merge: nessun reviewer è ammesso, altrimenti occorre almeno un `APPROVED` e nessun `NEEDS_WORK`. I blocker `OPEN` producono un avviso: soltanto il server determina se la propria policy li rende un impedimento. Vengono mostrati `canMerge`, conflitti, outcome e messaggi sintetici e dettagliati dei veto. Una PR chiusa fallisce il requisito locale e salta la GET di mergeability.
+
+L'exit code è `0` soltanto se i requisiti locali passano e il server restituisce una decisione favorevole, senza conflitti o veto; eventuali avvisi sui task non causano da soli un errore. Un blocco produce `1` e, in JSON, `MERGE_CHECK_FAILED` con il rapporto completo preservato. Errori HTTP, timeout e risposte incomplete restano errori con i codici esistenti e `data: null`: un endpoint non disponibile non equivale a un controllo superato. Un outcome sconosciuto non consente un esito favorevole.
+
+La verifica è una fotografia di letture separate: non riserva la PR, non garantisce i permessi di scrittura né il successo di un merge successivo. `merge-pr` continua ad applicare le proprie validazioni e i controlli del server. L'endpoint e la forma della risposta devono ancora essere confermati sulla versione aziendale. Per la prova usare `pr checks` su PR note (approvata, con richieste di modifica, con task o conflitti), confrontando il rapporto con Bitbucket; ripetere con `--json` e controllare `$LASTEXITCODE`. Non occorre eseguire un merge reale.
 
 ### Creazione di Pull Request
 
