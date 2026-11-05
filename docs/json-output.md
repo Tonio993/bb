@@ -1,6 +1,6 @@
 # Output JSON, schema versione 1
 
-`--json` è disponibile per `get-pr-url`, `get-pr-urls`, `create-pr`, `merge-pr` e `doctor`. L'output testuale resta il default. L'opzione cambia la rappresentazione del risultato, non le operazioni eseguite: creazione, merge, completamento dei task e cancellazione del source restano scritture reali quando richieste.
+`--json` è disponibile per `get-pr-url`, `get-pr-urls`, `create-pr`, `merge-pr`, `doctor`, `pr list` e `pr show`. L'output testuale resta il default. L'opzione cambia la rappresentazione del risultato, non le operazioni eseguite: creazione, merge, completamento dei task e cancellazione del source restano scritture reali quando richieste.
 
 Questo documento è incluso nel pacchetto come `docs/json-output.md`, insieme alla versione della CLI cui si riferisce.
 
@@ -12,6 +12,8 @@ bb --json get-pr-urls feature/ABC-123 develop --project-key PROJECT
 bb --json create-pr feature/ABC-123 develop
 bb --json merge-pr feature/ABC-123 develop --delete-source
 bb --json doctor --remote
+bb --json pr list --author jsmith --state ALL
+bb --json pr show 42 --project-key PROJECT --repository payments
 ```
 
 Dal checkout sostituire `bb` con `node src/main.ts`. Anche `bb doctor --json` e le altre forme con opzione locale sono supportate. Se un errore interrompe il parsing prima che Commander legga `--json`, rimane la modalità testuale: mettere l'opzione per prima consente di ottenere JSON anche per gli errori di sintassi successivi.
@@ -51,10 +53,12 @@ Campi aggiuntivi compatibili potranno essere introdotti nella versione 1; i cons
 | `create-pr`   | `{ "pullRequest": PR }`                                                        |
 | `merge-pr`    | `{ "pullRequest": PR, "sourceDeletion": stato }`                               |
 | `doctor`      | `{ "checks": [...], "summary": { "OK": n, "WARN": n, "FAIL": n, "SKIP": n } }` |
+| `pr list`     | `{ "pullRequests": [PR consultabile, ...] }`                                   |
+| `pr show`     | `{ "pullRequest": PR consultabile }`                                           |
 
 Una ricerca senza risultati è un successo: `null` per la ricerca singola, array vuoto per quella su più repository. L'ordine dei risultati segue la ricerca esistente.
 
-Una PR contiene esclusivamente questi campi:
+Le PR restituite dai comandi di ricerca, creazione e merge contengono questi campi:
 
 ```json
 {
@@ -79,6 +83,10 @@ Una PR contiene esclusivamente questi campi:
 ```
 
 Gli identificativi sono numeri; gli altri campi sono stringhe, salvo `url`, che può essere `null` quando il link non è disponibile o non è un URL HTTP(S) valido. Dagli URL vengono rimossi userinfo, query e fragment. Source e target conservano le rispettive identità, anche per fork. La response REST completa, descrizioni e dati utente aggiuntivi non vengono serializzati.
+
+Le PR consultabili di `pr list` e `pr show` conservano i campi precedenti e aggiungono `title` (stringa), `author` (utente), `openTasks` (array di `{ "id": numero, "text": stringa oppure null }`). I reviewer hanno forma `{ "status": stringa, "user": utente oppure null }`. Un utente contiene soltanto i campi disponibili `name`, `slug`, `displayName`; almeno `name` o `slug` è presente. Email, avatar e altri dati REST non sono esposti. `openTasks` include soltanto task `OPEN` con severity `BLOCKER`; l'array vuoto indica nessun task aperto. `text: null` indica testo assente nella risposta. Le letture di PR e task non sono atomiche.
+
+I nomi canonici nell'envelope sono `pr list` e `pr show`. La lista vuota è un successo con array vuoto; una PR non trovata con `pr show` produce `NOT_FOUND`. Errori durante la paginazione o la lettura dei task producono `data: null`, senza risultati parziali. Il contratto dei comandi preesistenti rimane invariato.
 
 `sourceDeletion` vale `not-requested`, `deleted` oppure `failed`. Nel terzo caso il merge è confermato: `data.pullRequest.state` è `MERGED`, `ok` è `false`, l'exit code è `1` e l'errore è `SOURCE_DELETION_FAILED`. Non ripetere automaticamente il merge per correggere la sola cancellazione.
 

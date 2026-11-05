@@ -280,6 +280,8 @@ Per verificare il riconoscimento sul server aziendale usare una PR aperta nota e
 | ------------------------------- | ------------------------------------------------------ |
 | `config [key] [value]`          | Elenca, legge o modifica la configurazione             |
 | `doctor`                        | Controlla strumenti locali e configurazione            |
+| `pr list`                       | Elenca le PR del repository con filtri e task aperti   |
+| `pr show <id-or-url>`           | Consulta una PR tramite ID o URL Bitbucket             |
 | `config list`                   | Elenca impostazioni e percorso del file                |
 | `config init`                   | Configura le impostazioni in modo interattivo          |
 | `token set [--stdin]`           | Salva il token con input nascosto o da una pipe        |
@@ -330,6 +332,23 @@ node src/main.ts get-pr-urls feature/ABC-123 develop --repository-filter "*payme
 `get-pr-url` stampa soltanto l'URL della PR trovata. `get-pr-urls` stampa gli URL corrispondenti, uno per riga. Entrambi terminano con successo e senza output quando non trovano corrispondenze.
 
 `get-pr-urls` richiede entrambi i branch e non interroga Git. Il filtro confronta sia `name` sia `slug`, senza distinzione tra maiuscole e minuscole: `*` corrisponde a zero o più caratteri e `?` a un carattere. La ricerca gestisce la paginazione di repository e PR.
+
+### Consultazione di Pull Request
+
+```powershell
+bb pr list
+bb pr list --author jsmith --state ALL
+bb pr list --project-key PROJECT --repository payments --state MERGED
+bb pr show 42
+bb pr show 42 --project-key PROJECT --repository payments
+bb --json pr show "https://bitbucket.example/context/projects/PROJECT/repos/payments/pull-requests/42"
+```
+
+Dal checkout sostituire `bb` con `node src/main.ts`. Entrambi i comandi mostrano titolo, autore, branch source e target con i rispettivi repository, reviewer con stato, task aperti e URL. `pr list` consulta le PR in ingresso nel singolo repository scelto: usa il remote configurato oppure `--repository` e `--project-key`, secondo le regole di risoluzione esistenti. Non richiede i branch. `--state` accetta `OPEN` (default), `MERGED`, `DECLINED` e `ALL`. `--author` confronta esattamente login o slug dell'autore, ignorando maiuscole e minuscole; il filtro viene applicato localmente dopo la paginazione delle PR. Una lista vuota stampa `No Pull Requests found.` e termina con codice `0`.
+
+`pr show` accetta un ID intero positivo, risolto nel repository selezionato, oppure un URL web HTTP(S) del server configurato. L'URL fornisce progetto e repository senza interrogare Git; deve coincidere con origine e context path di `bitbucket.url`. Sono supportati anche repository personali (`/users/<utente>/repos/...`) e i suffissi di vista `overview`, `diff`, `commits`, `activities` e `activity`. Query e fragment vengono ignorati; credenziali incorporate e override in conflitto vengono rifiutati. Con ID e identità manuale completa non si interroga Git. Una PR assente o non accessibile produce un errore, non un risultato vuoto.
+
+Si eseguono soltanto GET tramite il client Bitbucket: pagine delle PR o dettaglio della singola PR, poi pagine dei task per ciascuna PR selezionata. I task aperti sono i blocker con stato `OPEN`; task risolti e commenti ordinari sono esclusi. Le letture sono sequenziali e non costituiscono una fotografia atomica né una verifica preventiva del merge. Un errore interrompe il risultato senza stampare una lista parziale. `--json` restituisce gli stessi dati nel [contratto versionato](docs/json-output.md), senza email o response REST complete.
 
 ### Creazione di Pull Request
 

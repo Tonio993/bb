@@ -4,19 +4,19 @@ Questo documento descrive responsabilità e invarianti dell'implementazione Node
 
 ## Responsabilità dei moduli
 
-| Area                | Responsabilità                                                                  |
-| ------------------- | ------------------------------------------------------------------------------- |
-| `src/main.ts`       | Composition root: store, client, contesto lazy, CLI, errore finale e cleanup.   |
-| `src/cli/`          | Parsing Commander, directory temporanea globale, contratti e input del token.   |
-| `src/cli/commands/` | Registrar dei comandi, opzioni, risoluzione degli input e output.               |
-| `src/application/`  | Orchestrazione del merge e della diagnostica tramite dipendenze esplicite.      |
-| `src/diagnostics/`  | Lettura della versione npm e ricerca locale degli eseguibili dei backend.       |
-| `src/bitbucket/`    | Trasporto HTTP, parser delle response, paginazione e operazioni REST.           |
-| `src/git/`          | Esecuzione Git, autenticazione selettiva ed errori strutturati.                 |
-| `src/auth/`         | Store del token, selezione e implementazioni dei backend sicuri.                |
-| `src/config/`       | Configurazione globale, validazione condivisa e persistenza atomica.            |
-| `src/repository/`   | Risoluzione centralizzata di project key e repository.                          |
-| `src/pull-request/` | Regole pure per branch, reviewer, contenuto, messaggio e validazione del merge. |
+| Area                | Responsabilità                                                                    |
+| ------------------- | --------------------------------------------------------------------------------- |
+| `src/main.ts`       | Composition root: store, client, contesto lazy, CLI, errore finale e cleanup.     |
+| `src/cli/`          | Parsing Commander, directory temporanea globale, contratti e input del token.     |
+| `src/cli/commands/` | Registrar dei comandi, opzioni, risoluzione degli input e output.                 |
+| `src/application/`  | Orchestrazione di consultazione PR, merge e diagnostica con dipendenze esplicite. |
+| `src/diagnostics/`  | Lettura della versione npm e ricerca locale degli eseguibili dei backend.         |
+| `src/bitbucket/`    | Trasporto HTTP, parser delle response, paginazione e operazioni REST.             |
+| `src/git/`          | Esecuzione Git, autenticazione selettiva ed errori strutturati.                   |
+| `src/auth/`         | Store del token, selezione e implementazioni dei backend sicuri.                  |
+| `src/config/`       | Configurazione globale, validazione condivisa e persistenza atomica.              |
+| `src/repository/`   | Risoluzione centralizzata di project key e repository.                            |
+| `src/pull-request/` | Regole pure per branch, reviewer, contenuto, messaggio e validazione del merge.   |
 
 ## Mappa dei file
 
@@ -31,6 +31,7 @@ src/
     json-output.ts
     json-errors.ts
     pull-request-output.ts
+    pull-request-view-output.ts
     token-input.ts
     commands/
       index.ts
@@ -42,6 +43,7 @@ src/
       get-pr-urls-command.ts
       create-pr-command.ts
       merge-pr-command.ts
+      pr-command.ts
   application/
     doctor/
       run-doctor.ts
@@ -51,6 +53,8 @@ src/
       doctor-types.ts
     merge-pull-request.ts
     merge-pull-request-types.ts
+    read-pull-requests.ts
+    pull-request-view-types.ts
   diagnostics/
     executable.ts
     npm-version.ts
@@ -92,6 +96,7 @@ src/
     remote-url-types.ts
     repository-context.ts
     repository-types.ts
+    pull-request-reference.ts
   pull-request/
     branches.ts
     reviewers.ts
@@ -139,7 +144,7 @@ L'help esplicito termina con successo; in modalità testuale parsing e errori ap
 
 ## Output JSON
 
-Il contratto pubblico versionato è in [json-output.md](json-output.md); la numerazione delle evolutive è conservata in [roadmap.md](roadmap.md). Il formato è opt-in tramite `--json` globale prima del comando oppure locale sui cinque comandi supportati: `get-pr-url`, `get-pr-urls`, `create-pr`, `merge-pr` e `doctor`. Le opzioni locali sono dichiarate nei rispettivi registrar. Commander resta responsabile del parsing: non si cercano flag nell'array degli argomenti e non si aggiunge routing sui nomi dei comandi.
+Il contratto pubblico versionato è in [json-output.md](json-output.md); la numerazione delle evolutive è conservata in [roadmap.md](roadmap.md). Il formato è opt-in tramite `--json` globale prima del comando oppure locale sui sette comandi supportati: `get-pr-url`, `get-pr-urls`, `create-pr`, `merge-pr`, `doctor`, `pr list` e `pr show`. Le opzioni locali sono dichiarate nei rispettivi registrar. Commander resta responsabile del parsing: non si cercano flag nell'array degli argomenti e non si aggiunge routing sui nomi dei comandi.
 
 `json-output-types.ts` definisce envelope, codici di errore e proiezione delle PR. `json-output.ts` legge gli option values di Commander, ricava il nome canonico dai parent e scrive un solo documento su stdout, impostando exit code `0` o `1`. `pull-request-output.ts` proietta solo metadati PR documentati: nessuna serializzazione diretta delle response REST. I link vengono limitati a HTTP(S), senza userinfo, query o fragment, con `null` per link non disponibili o non validi. Le identità source e target restano distinte per supportare i fork.
 
@@ -262,6 +267,16 @@ Il parser scarta l'eventuale userinfo e non restituisce username o password. I s
 Con un solo branch posizionale, il source è quello corrente e il target è l'argomento. Con due branch entrambi sono espliciti. Source e target non possono coincidere; non interrogare Git quando sono già noti.
 
 `get-pr-url` cerca una PR aperta nel repository e termina al primo risultato corrispondente. `get-pr-urls` cerca nei repository del progetto e filtra nome e slug con wildcard `*` e `?`, senza distinzione tra maiuscole e minuscole. Entrambi stampano solo URL; nessun risultato significa nessun output ed exit code di successo.
+
+## Consultazione PR
+
+`cli/commands/pr-command.ts` registra il gruppo Commander `pr` e i figli `list` e `show`. Il registrar risolve gli input e sceglie il formato; `application/read-pull-requests.ts` coordina esclusivamente GET tramite un contratto `Pick<BitbucketApi, "get">`, senza output, processi o scritture. `pull-request-view-types.ts` contiene il risultato condiviso: dettagli della PR e task aperti. L'identità target restituita dal server deve coincidere con quella richiesta prima di leggere i task.
+
+`pull-request-search.ts` pagina le PR del repository target nello stato scelto (`OPEN` predefinito, `MERGED`, `DECLINED`, `ALL`) e filtra localmente l'autore per login o slug esatto senza distinzione di maiuscole. Solo le PR selezionate provocano letture dei task, anch'esse paginate. L'orchestrazione è sequenziale, conserva l'ordine del server ed esclude task risolti o con severity diversa da `BLOCKER`. Un errore non produce risultati parziali. La vista non è atomica e non sostituisce i merge check.
+
+`repository/pull-request-reference.ts` valida ID positivi e URL web, estrae progetto/repository/ID e rifiuta URL con credenziali, segmenti ambigui, server o context path diversi dalla configurazione. Gli URL personali `/users/` diventano project key `~utente`. Query, fragment e suffissi di vista ammessi non fanno parte dell'identità. Le richieste usano sempre il client configurato, mai l'URL fornito direttamente. Con URL o ID e identità manuale completa Git resta lazy. La normalizzazione del context path è condivisa in `config/bitbucket-url.ts` con la risoluzione del remote.
+
+`BitbucketPullRequestDetails` richiede titolo e autore, opzionali nel modello generale per preservare i flussi esistenti. I parser validano utenti e testo task quando presenti. `cli/pull-request-view-output.ts` proietta i dettagli senza email né altri campi REST e formatta il testo su righe prive di controlli terminale. Riusa la proiezione core di `pull-request-output.ts`, lasciando invariati i risultati JSON dei comandi preesistenti. I test sono in `test/cli/commands/pr-command.test.ts` e `test/repository/pull-request-reference.test.ts`; il pacchetto installato verifica entrambi i comandi in testo e JSON con HTTP simulato.
 
 ## Creazione PR
 

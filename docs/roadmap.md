@@ -7,7 +7,7 @@ Questo elenco conserva la numerazione concordata. Descrive le evoluzioni dell'ap
 | 1     | Diagnostica dell'ambiente: `bb doctor`              | Implementata    |
 | 2     | Riconoscimento del repository dal remote Git        | Implementata    |
 | 3     | Output strutturato per script e CI: `--json`        | Implementata    |
-| 4     | Consultazione delle PR: `bb pr list` e `bb pr show` | Da implementare |
+| 4     | Consultazione delle PR: `bb pr list` e `bb pr show` | Implementata    |
 | 5     | Verifica preventiva del merge: `bb pr checks`       | Da implementare |
 | 6     | Anteprima delle operazioni: `--dry-run`             | Da implementare |
 | 7     | Creazione PR più personalizzabile                   | Da implementare |
@@ -20,7 +20,7 @@ Questo elenco conserva la numerazione concordata. Descrive le evoluzioni dell'ap
 1. **Diagnostica.** Versioni Node/npm/Git, configurazione, tool del portachiavi, lettura della credenziale e verifica remota su richiesta.
 2. **Identità dal remote.** Progetto e repository da HTTP(S), SSH e SCP, con context path, override espliciti e associazioni SSH.
 3. **JSON.** Formato versionato per ricerca, creazione, merge e diagnostica, con codici di errore documentati e output testuale predefinito. Il contratto è in [json-output.md](json-output.md).
-4. **Consultazione PR.** Titolo, autore, branch, reviewer e task, filtri e selezione tramite ID o URL. I nomi `pr list` e `pr show` sono proposte, non comandi attualmente disponibili.
+4. **Consultazione PR.** `pr list` e `pr show` espongono titolo, autore, branch, reviewer e task aperti, con filtri per repository, autore e stato e selezione tramite ID o URL. Supportano output testuale e JSON, con sole letture REST.
 5. **Controlli del merge.** Fotografia dei controlli locali, reviewer, task e motivazioni di blocco del server; confermare il comportamento delle API sulla versione aziendale.
 6. **Anteprima.** Contenuto della creazione e piano del merge senza scritture REST, documentando letture remote ed eventuali fetch.
 7. **Creazione personalizzabile.** Descrizione da file, template, apertura facoltativa nel browser e rilevamento di PR già aperte.
@@ -30,4 +30,4 @@ Questo elenco conserva la numerazione concordata. Descrive le evoluzioni dell'ap
 11. **Prestazioni.** Concorrenza limitata tra repository, paginazione sequenziale interna e ordine deterministico; misurare i benefici prima di introdurre cache.
 12. **Più PR.** Ricerca, verifiche e successivi merge attraverso più repository, con esiti separati e successi parziali espliciti.
 
-L'opzione `merge-pr --delete-source` è stata implementata come estensione del merge e non cambia questa numerazione. Il prossimo punto della roadmap è il **4**.
+L'opzione `merge-pr --delete-source` è stata implementata come estensione del merge e non cambia questa numerazione. Il prossimo punto della roadmap è il **5**.
