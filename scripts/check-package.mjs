@@ -349,8 +349,61 @@ try {
             }
         }
     }
+    console.log("Checking creation previews in the installed JavaScript...");
+    for (const json of [false, true]) {
+        const createPreviewCheck = [
+            "import assert from 'node:assert/strict';",
+            "import cp from 'node:child_process';",
+            "import { syncBuiltinESMExports } from 'node:module';",
+            "const calls = [];",
+            "cp.spawnSync = (command, args) => {",
+            "assert.equal(command, 'git'); calls.push(args[0]);",
+            "assert.ok(['fetch','show-ref','log'].includes(args[0]));",
+            "return { status:0, stdout:args[0] === 'log' ? 'Validate payments\\x1eCheck account\\x1d' : '', stderr:'', signal:null }; };",
+            "syncBuiltinESMExports();",
+            "globalThis.fetch = async () => { throw new Error('Creation preview must not use REST.'); };",
+            "await import(" + JSON.stringify(pathToFileURL(main).href) + ");",
+            "assert.deepEqual(calls, ['fetch','show-ref','show-ref','log']);",
+        ].join("\n");
+        const raw = run(
+            process.execPath,
+            [
+                "--input-type=module",
+                "--eval",
+                createPreviewCheck,
+                main,
+                ...(json ? ["--json"] : []),
+                "create-pr",
+                "feature/test",
+                "develop",
+                "--project-key",
+                "REMOTE",
+                "--repository",
+                "payments",
+                "--dry-run",
+                "--reviewer",
+                "jane",
+            ],
+            { env: { ...environment, BB_TOKEN: "package-smoke-token" } },
+        );
+        assert.doesNotMatch(raw, /package-smoke-token/);
+        if (json) {
+            const result = JSON.parse(raw);
+            assert.equal(result.ok, true);
+            assert.equal(result.data.dryRun, true);
+            assert.equal(result.data.plan.title, "Validate payments");
+            assert.deepEqual(result.data.plan.reviewers, ["jane"]);
+            assert.equal(result.data.git.fetchPerformed, true);
+        } else assert.match(raw, /Dry run: no Pull Request was created/);
+    }
     console.log("Checking source deletion after merge in the installed JavaScript...");
-    for (const outcome of ["deleted", "deletion-rejected", "merge-rejected", "unconfirmed-merge"]) {
+    for (const outcome of [
+        "deleted",
+        "deletion-rejected",
+        "merge-rejected",
+        "unconfirmed-merge",
+        "preview",
+    ]) {
         const mergeCheck = `
             import assert from 'node:assert/strict';
             import cp from 'node:child_process';
@@ -377,6 +430,16 @@ try {
                     return Response.json({ values:[pr], size:1, start:0, limit:100, isLastPage:true });
                 }
                 if (method === 'GET' && path.endsWith('/pull-requests/42')) return Response.json(pr);
+                if (outcome === 'preview') {
+                    assert.equal(method, 'GET', 'Preview must never write to REST.');
+                    if (path.endsWith('/blocker-comments')) return Response.json({
+                        values:[{ id:101, version:2, state:'OPEN', severity:'BLOCKER' }],
+                        size:1, start:0, limit:100, isLastPage:true
+                    });
+                    if (path.endsWith('/comments/101')) return Response.json({ id:101, version:3, state:'OPEN', severity:'BLOCKER', text:'Fix tests' });
+                    assert.ok(path.endsWith('/commit-message-suggestion'));
+                    return Response.json({ title:'Merge payments', body:'Reviewed changes' });
+                }
                 if (method === 'POST') {
                     assert.equal(path, '/context/rest/api/latest/projects/REMOTE/repos/payments/pull-requests/42/merge');
                     assert.deepEqual(JSON.parse(init.body), { version:7 });
@@ -392,7 +455,7 @@ try {
                     : new Response(null, { status:204 });
             };
             await import(${JSON.stringify(pathToFileURL(main).href)});
-            assert.deepEqual(requests, outcome === 'merge-rejected' || outcome === 'unconfirmed-merge'
+            assert.deepEqual(requests, outcome === 'preview' ? ['GET','GET','GET','GET','GET'] : outcome === 'merge-rejected' || outcome === 'unconfirmed-merge'
                 ? ['GET','GET','POST'] : ['GET','GET','POST','DELETE']);
         `;
         for (const json of [false, true]) {
@@ -412,6 +475,9 @@ try {
                     "--repository",
                     "payments",
                     "--delete-source",
+                    ...(outcome === "preview"
+                        ? ["--dry-run", "--complete-tasks", "--message-prefix", "[TEST] "]
+                        : []),
                 ],
                 {
                     cwd: fixture,
@@ -422,7 +488,11 @@ try {
                 },
             );
             assert.ifError(result.error);
-            assert.equal(result.status, outcome === "deleted" ? 0 : 1, result.stderr);
+            assert.equal(
+                result.status,
+                outcome === "deleted" || outcome === "preview" ? 0 : 1,
+                result.stderr,
+            );
             assert.doesNotMatch(
                 result.stderr + result.stdout,
                 /package-smoke-token|AssertionError/,
@@ -432,10 +502,22 @@ try {
                 const payload = JSON.parse(result.stdout);
                 assert.equal(payload.schemaVersion, 1);
                 assert.equal(payload.command, "merge-pr");
-                assert.equal(payload.ok, outcome === "deleted");
+                assert.equal(payload.ok, outcome === "deleted" || outcome === "preview");
                 assert.equal(payload.exitCode, result.status);
                 assert.doesNotMatch(result.stdout, /Protected branch|Merge rejected/);
-                if (outcome === "deleted" || outcome === "deletion-rejected") {
+                if (outcome === "preview") {
+                    assert.equal(payload.data.dryRun, true);
+                    assert.equal(payload.data.pullRequest.state, "OPEN");
+                    assert.deepEqual(payload.data.plan.tasksToComplete, [
+                        { id: 101, version: 3, text: "Fix tests" },
+                    ]);
+                    assert.equal(
+                        payload.data.plan.message,
+                        "[TEST] Merge payments\n\nReviewed changes",
+                    );
+                    assert.equal(payload.data.plan.sourceDeletion.projectKey, "FORK");
+                    assert.equal(payload.data.sourceDeletion, undefined);
+                } else if (outcome === "deleted" || outcome === "deletion-rejected") {
                     assert.equal(payload.data.pullRequest.state, "MERGED");
                     assert.equal(
                         payload.data.sourceDeletion,
@@ -452,6 +534,13 @@ try {
                         outcome === "merge-rejected" ? "CONFLICT" : "APPLICATION_ERROR",
                     );
                 }
+            } else if (outcome === "preview") {
+                assert.equal(result.stderr, "");
+                assert.match(result.stdout, /Dry run: no tasks were completed/);
+                assert.match(
+                    result.stdout,
+                    /Delete source after confirmed merge: FORK\/fork-payments/,
+                );
             } else if (outcome === "merge-rejected" || outcome === "unconfirmed-merge") {
                 assert.equal(result.stdout, "");
                 assert.match(result.stderr, /Error:/);
