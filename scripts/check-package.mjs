@@ -264,7 +264,12 @@ try {
         "",
     );
     console.log("Checking Pull Request consultation in the installed JavaScript...");
-    for (const command of ["list", "show"]) {
+    for (const { command, blocked } of [
+        { command: "list", blocked: false },
+        { command: "show", blocked: false },
+        { command: "checks", blocked: false },
+        { command: "checks", blocked: true },
+    ]) {
         for (const json of [false, true]) {
             const consultationCheck = [
                 "import assert from 'node:assert/strict';",
@@ -282,20 +287,27 @@ try {
                 "const root = 'https://bitbucket.example/context/rest/api/latest/projects/REMOTE/repos/payments/pull-requests';",
                 "const paths = [" +
                     JSON.stringify(command === "list" ? "?state=OPEN&start=0&limit=100" : "/42") +
-                    ", '/42/blocker-comments?start=0&limit=100'];",
+                    ", '/42/blocker-comments?start=0&limit=100', '/42/merge'];",
                 "let calls = 0;",
                 "globalThis.fetch = async (input, init) => {",
                 "assert.equal(String(input), root + paths[calls]);",
                 "assert.equal(init.method, 'GET');",
                 "assert.equal(new Headers(init.headers).get('Authorization'), 'Bearer package-smoke-token');",
                 "calls++;",
+                "if (calls === 3) return Response.json({ canMerge:" +
+                    !blocked +
+                    ", conflicted:false, outcome:'CLEAN', vetoes:" +
+                    (blocked
+                        ? "[{ summaryMessage:'CI required', detailedMessage:'Wait for CI' }]"
+                        : "[]") +
+                    " });",
                 "const page = values => ({ size:values.length, limit:100, start:0, isLastPage:true, values });",
                 "return Response.json(calls === 1 ? (" +
                     JSON.stringify(command) +
                     " === 'list' ? page([pr]) : pr) : page([",
                 "{ id:101, version:0, state:'OPEN', severity:'BLOCKER', text:'Fix validation' } ])); };",
                 "await import(" + JSON.stringify(pathToFileURL(main).href) + ");",
-                "assert.equal(calls, 2);",
+                "assert.equal(calls, " + (command === "checks" ? 3 : 2) + ");",
             ].join("\n");
             const args = [main, ...(json ? ["--json"] : []), "pr", command];
             if (command === "list")
@@ -310,12 +322,17 @@ try {
                 {
                     env: { ...environment, BB_TOKEN: "package-smoke-token" },
                 },
+                blocked ? 1 : 0,
             );
             assert.doesNotMatch(result, /private-marker|package-smoke-token/);
             if (json) {
                 const payload = JSON.parse(result);
                 assert.equal(payload.command, "pr " + command);
-                assert.equal(payload.ok, true);
+                assert.equal(payload.ok, !blocked);
+                if (command === "checks") {
+                    assert.equal(payload.data.readyForMerge, !blocked);
+                    assert.equal(payload.error?.code, blocked ? "MERGE_CHECK_FAILED" : undefined);
+                }
                 const pr =
                     command === "list" ? payload.data.pullRequests[0] : payload.data.pullRequest;
                 assert.equal(pr.title, "Inspect payments");
@@ -324,6 +341,11 @@ try {
             } else {
                 assert.match(result, /#42 OPEN - Inspect payments/);
                 assert.match(result, /#101 Fix validation/);
+                if (command === "checks")
+                    assert.match(
+                        result,
+                        blocked ? /Not ready for merge/ : /Ready for merge at the time/,
+                    );
             }
         }
     }
