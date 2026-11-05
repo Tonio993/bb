@@ -153,7 +153,7 @@ Per i problemi più comuni:
 
 ## Configurazione globale
 
-`config init` chiede un valore alla volta. Mostra i valori esistenti come default e li mantiene premendo Invio. Non richiede una configurazione già completa né un token.
+`config init` chiede un valore alla volta. Mostra i valori esistenti come default e li mantiene premendo Invio. La project key è opzionale: lasciarla vuota per ricavarla dal remote nei comandi sul repository corrente. Non richiede una configurazione già completa né un token; conserva gli hostname SSH già configurati.
 
 Per leggere, elencare o modificare le impostazioni:
 
@@ -164,17 +164,23 @@ node src/main.ts config bitbucket.url
 node src/main.ts config bitbucket.url "https://bitbucket.company.com"
 node src/main.ts config bitbucket.projectKey "PROJECT"
 node src/main.ts config bitbucket.defaultReviewers "mrossi,lbianchi"
+node src/main.ts config bitbucket.sshHostnames "ssh.bitbucket.company.com,bb-internal"
 node src/main.ts config git.remote "origin"
 ```
 
-| Impostazione                 | Obbligatoria | Valore predefinito |
-| ---------------------------- | ------------ | ------------------ |
-| `bitbucket.url`              | Sì           | Nessuno            |
-| `bitbucket.projectKey`       | Sì           | Nessuno            |
-| `bitbucket.defaultReviewers` | No           | Nessun reviewer    |
-| `git.remote`                 | No           | `origin`           |
+| Impostazione                 | Obbligatoria | Valore predefinito          |
+| ---------------------------- | ------------ | --------------------------- |
+| `bitbucket.url`              | Sì           | Nessuno                     |
+| `bitbucket.projectKey`       | No           | Nessuno                     |
+| `bitbucket.defaultReviewers` | No           | Nessun reviewer             |
+| `bitbucket.sshHostnames`     | No           | Nessun hostname alternativo |
+| `git.remote`                 | No           | `origin`                    |
 
 `bitbucket.url` può includere il context path del server, ad esempio `https://bitbucket.company.com/bitbucket`.
+
+`bitbucket.projectKey` è un default per `get-pr-urls` e per la selezione manuale di un repository. `get-pr-urls` richiede il progetto configurato o `--project-key`; i comandi sul repository corrente possono ricavarlo dal remote.
+
+`bitbucket.sshHostnames` associa esplicitamente gli hostname SSH alternativi al server di `bitbucket.url`. Accetta una lista separata da virgole di hostname o IPv6 tra parentesi quadre, senza porte, percorsi, userinfo o wildcard. Un valore vuoto svuota la lista. In `config.json` il valore è un array di stringhe. L'associazione non cambia la connessione Git né le impostazioni SSH.
 
 Il file di configurazione risiede fuori dai repository:
 
@@ -222,7 +228,29 @@ Il token persistente viene letto solo alla prima operazione autenticata e riutil
 
 ## Repository, directory e branch
 
-La project key viene dalla configurazione oppure dall'override `--project-key`. Il repository viene identificato dal nome della directory radice restituita da Git: tale nome deve corrispondere allo slug del repository Bitbucket.
+Per `get-pr-url`, `create-pr` e `merge-pr`, project key e slug del repository vengono ricavati dall'URL di fetch di `git.remote` (default `origin`). `--project-key` prevale sul progetto del remote; il progetto globale non sostituisce quello riconosciuto automaticamente. Il nome della directory locale può essere diverso dallo slug. La lettura del remote è locale, applica le riscritture Git `insteadOf` e non richiede token o rete.
+
+Per HTTP(S) il remote deve corrispondere a protocollo, hostname, porta e context path di `bitbucket.url`. Per SSH, anche in sintassi SCP, deve avere lo stesso hostname del server configurato oppure comparire in `bitbucket.sshHostnames`; porta e percorso SSH possono essere diversi da quelli HTTP. Un remote assente, non riconosciuto o appartenente a un altro server produce un errore, senza ripiegare sul nome della directory. Le associazioni SSH non autorizzano remote HTTP(S) di altri server.
+
+`--repository <slug>` seleziona manualmente il repository per `get-pr-url`, `create-pr` e `merge-pr`. Con un repository manuale si usa `--project-key` oppure il progetto globale; se manca anche questo, si ricava il progetto dal remote. Quando progetto e repository sono già disponibili, la discovery del remote viene saltata. Specificando anche entrambi i branch, `get-pr-url` e `merge-pr` funzionano fuori da un checkout senza inizializzare Git. `create-pr` continua a richiedere Git per fetch, branch remoti e contenuto della PR. `get-pr-urls` usa il progetto configurato o `--project-key`, senza interrogare Git.
+
+```powershell
+bb get-pr-url feature/ABC-123 develop --project-key PROJECT --repository payments
+bb merge-pr feature/ABC-123 develop --project-key PROJECT --repository payments
+bb config bitbucket.sshHostnames "ssh.bitbucket.company.com"
+```
+
+Le precedenze dipendono dai dati disponibili:
+
+| Input                                 | Progetto   | Repository | Lettura del remote |
+| ------------------------------------- | ---------- | ---------- | ------------------ |
+| Nessun override                       | Dal remote | Dal remote | Sì                 |
+| Solo `--project-key`                  | Esplicito  | Dal remote | Sì                 |
+| `--repository` e progetto globale     | Globale    | Esplicito  | No                 |
+| `--repository` senza progetto globale | Dal remote | Esplicito  | Sì                 |
+| `--project-key` e `--repository`      | Esplicito  | Esplicito  | No                 |
+
+Un checkout con più remote usa soltanto il primo URL di fetch di `git.remote`; gli URL di push non determinano l'identità. Il riconoscimento funziona nelle sottodirectory e nei worktree collegati. La project key globale resta utile alle ricerche su tutto il progetto e agli override manuali; non corregge un remote non riconosciuto. URL locali, protocolli diversi da HTTP(S)/SSH e forme clone non standard richiedono una selezione manuale.
 
 L'opzione globale `-C` / `--path`, prima del comando, cambia la directory per la durata dell'operazione e la ripristina anche in caso di errore:
 
@@ -241,6 +269,8 @@ Per `get-pr-url`, `create-pr` e `merge-pr`:
 - source e target devono essere diversi.
 
 Quando entrambi i branch sono specificati, la CLI evita di interrogare il branch corrente.
+
+Per verificare il riconoscimento sul server aziendale usare una PR aperta nota e `get-pr-url`, che esegue soltanto letture. Dal checkout, anche se rinominato, eseguire `bb -C "<checkout o sottodirectory>" get-pr-url <source> <target>` e confrontare l'URL con quello della PR. Ripetere da una directory esterna al checkout con `bb get-pr-url <source> <target> --project-key <progetto> --repository <slug>`: l'URL deve coincidere. Per clone SSH con hostname differente configurare prima l'associazione in `bitbucket.sshHostnames`. I placeholder vanno sostituiti con i valori reali; nessun risultato produce output vuoto con exit code `0`, mentre un errore di remote, configurazione o API produce exit code `1`. `doctor --remote` verifica l'accesso alla dashboard, ma non verifica questa risoluzione né i permessi sul repository scelto.
 
 ## Comandi
 
@@ -361,9 +391,11 @@ npm test
 
 I test usano il runner nativo Node, client sostituibili e risposte HTTP simulate. Non richiedono un server Bitbucket, un token reale o operazioni Git remote. Alcuni test eseguono subprocess Node per verificare la CLI e usano configurazioni temporanee isolate.
 
+Le prove di discovery eseguono Git reale in repository temporanei, escludendo configurazioni e hook personali: checkout rinominati, sottodirectory, worktree, HTTP(S), SSH/SCP, remote configurato, più URL, `insteadOf` e rifiuto prima dell'accesso alle credenziali. L'HTTP rimane simulato. Per eseguirle usare `node --test "test/cli/repository-discovery.test.ts" "test/git/git-remote-url.test.ts"`.
+
 I comandi dipendono da contratti strutturali ottenuti con `Pick`, così i test possono fornire semplici oggetti con i metodi necessari. I test di `BitbucketClient` iniettano `fetch` nelle opzioni del costruttore; quelli di `GitClient` iniettano `execute` nel quarto argomento opzionale, senza sostituire le funzioni globali di rete o processo. In esecuzione normale i client usano le API native Node. `npm test` seleziona `test/**/*.test.ts` ed esclude gli helper condivisi dalla scoperta delle suite.
 
-La verifica del pacchetto installabile è separata e si avvia con `npm run test:package`.
+La verifica del pacchetto installabile è separata e si avvia con `npm run test:package`. Include help delle nuove opzioni repository, lettura e scrittura della configurazione SSH e ricerca PR sul JavaScript installato senza progetto globale, sia da remote simulato sia con identità manuale fuori dal checkout. Non contatta Bitbucket né usa portachiavi personali.
 
 `npm run test:git` verifica l'installazione da un repository Git temporaneo senza `dist/` né `node_modules/`, usando un prefisso isolato. La prova richiede npm >=12.2.1, scarica le dipendenze di build dal registry npm, verifica il launcher e l'assenza delle dipendenze di sviluppo nel pacchetto installato. È separata dalla suite offline e viene eseguita nella matrice CI su tutte e tre le piattaforme. Per eseguirla con la versione npm fissata dalla CI senza aggiornare l'installazione globale usare `npm exec --yes --package=npm@12.2.1 -- npm run test:git`.
 

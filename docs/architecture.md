@@ -63,6 +63,7 @@ src/
     config-validation.ts
     config-store.ts
     bitbucket-url.ts
+    ssh-hostnames.ts
   git/
     git-types.ts
     git-client.ts
@@ -80,7 +81,10 @@ src/
     pull-requests.ts
     pull-request-tasks.ts
   repository/
+    remote-url.ts
+    remote-url-types.ts
     repository-context.ts
+    repository-types.ts
   pull-request/
     branches.ts
     reviewers.ts
@@ -160,13 +164,15 @@ Senza risposta HTTP, l'autenticazione è `SKIP`, anche in caso di timeout; se il
 | Linux       | `$XDG_CONFIG_HOME/bb/config.json`, altrimenti `~/.config/bb/config.json` |
 | macOS       | `~/Library/Application Support/bb/config.json`                           |
 
-Le chiavi obbligatorie sono `bitbucket.url` e `bitbucket.projectKey`; quelle opzionali sono `bitbucket.defaultReviewers` e `git.remote`, con default rispettivamente lista vuota e `origin`.
+`bitbucket.url` è obbligatorio per i comandi REST e Git autenticato. `bitbucket.projectKey` è opzionale nella configurazione generale: il progetto può provenire dal remote o da `--project-key`. Soltanto `get-pr-urls` richiede il default o un override esplicito, tramite `requireProjectKey` prima di accedere al client HTTP. `bitbucket.defaultReviewers` e `bitbucket.sshHostnames` hanno default lista vuota; `git.remote` ha default `origin`. `doctor` considera valida una configurazione con URL anche senza progetto globale.
 
-Gli obblighi vengono verificati da `loadRequired` e dal salvataggio completo `save`, senza bloccare `config init` in assenza di un file. Gli errori indicano la chiave e i comandi per configurarla. `config init` conserva il default quando l'utente preme Invio. `list` e `init` sono sottocomandi Commander e non accettano argomenti aggiuntivi.
+`loadRequired` e il salvataggio completo `save` verificano l'URL senza imporre un progetto globale, e non bloccano `config init` in assenza di un file. Gli errori indicano la chiave e i comandi per configurarla. `config init` conserva il default quando l'utente preme Invio, consente di lasciare assente il progetto e conserva le associazioni SSH esistenti. `list` e `init` sono sottocomandi Commander e non accettano argomenti aggiuntivi.
 
 `get`, `snapshot`, `set`, `save` e `loadRequired` condividono le regole di normalizzazione. Le stringhe presenti non possono essere vuote dopo il trim. `get` verifica sempre la struttura JSON, ma applica le regole semantiche solo alla chiave richiesta: Git locale resta indipendente da un URL Bitbucket non valido. `snapshot` legge una volta tutti i valori con i default; `config list` e i default di `config init` usano una singola snapshot per invocazione, senza cache globale obsoleta.
 
 La normalizzazione in `config/bitbucket-url.ts` è condivisa con Git: URL HTTP/HTTPS assoluto, senza credenziali, wildcard nell'host, query, fragment o spazi interni. Conserva il context path, normalizza host e porta tramite `URL` e rimuove gli slash finali. Gli errori non devono mostrare l'URL inserito.
+
+`config/ssh-hostnames.ts` condivide tra configurazione e resolver la normalizzazione degli hostname SSH esplicitamente associati al server. La lista è un array JSON; `bb config bitbucket.sshHostnames <lista>` accetta valori separati da virgole e una stringa vuota per azzerarla. Hostname e IPv6 vengono normalizzati e deduplicati; porte, percorsi, userinfo e wildcard sono rifiutati senza riportare l'input. Le scritture non sostituiscono la configurazione se un elemento è invalido. Le letture di singole altre chiavi restano indipendenti da un errore semantico nella lista.
 
 La scrittura usa un temporaneo esclusivo nella stessa directory, chiusura e `renameSync` per sostituire la destinazione. Un errore preserva il file precedente e ripulisce il temporaneo: nessuna cancellazione preventiva o scrittura diretta di ripiego. Gli aggiornamenti di singole chiavi conservano i campi sconosciuti.
 
@@ -210,9 +216,27 @@ L'autenticazione non inserisce token negli argomenti: usa `GIT_CONFIG_COUNT`, `G
 
 Preservare le configurazioni Git ereditate. `GIT_CONFIG_COUNT` deve essere un intero decimale non negativo incrementabile senza perdita di precisione: non reinterpretare input malformati come zero. Il costruttore consente di iniettare `execute` nei test, senza sostituire globalmente `spawnSync`.
 
+`GitClient.remoteFetchUrl(remote = this.remote)` legge l'URL di fetch tramite `git remote get-url -- <remote>`, con acquisizione dell'output, timeout di 10 secondi e autenticazione disabilitata. Il separatore `--` mantiene il nome del remote come argomento posizionale. Si usa il primo URL di fetch e si delegano a Git le regole `insteadOf`, senza selezionare URL di push o eseguire operazioni di rete, come descritto nella [documentazione Git](https://git-scm.com/docs/git-remote). Nome del remote vuoto e risposta vuota producono errori di validazione; gli altri errori sono `GitCommandError` che conservano argomenti, exit code e segnale disponibili, senza riportare stdout, stderr, errori nativi o cause che potrebbero contenere credenziali.
+
+Il metodo restituisce l'URL grezzo, da passare al parser senza stamparlo: può includere userinfo già presente nella configurazione Git. Non legge il token Bitbucket né l'URL del server, non modifica la configurazione e non memorizza il risultato in cache. La prova nativa usa un repository temporaneo isolato per verificare riscritture, più URL di fetch, URL di push distinto, remote assente e directory esterna a Git. Il contratto strutturale `GitOperations` include il metodo e gli stub dei comandi ne impediscono chiamate inattese. `resolveRepositoryContext` usa questo lettore con il nome del remote configurato.
+
 ## Repository, branch e ricerca PR
 
-`RepositoryContext` risolve il project key da override CLI e poi configurazione, e il repository da override esplicito e poi Git corrente. Non duplicare la logica nei comandi.
+`resolveRepositoryContext` centralizza la risoluzione dell'identità; i contratti `RepositoryContext`, `RepositoryContextConfig` e `ResolveRepositoryContextOptions` vivono in `repository/repository-types.ts`. Riceve URL del server, project key opzionale, nome del remote, associazioni SSH e un provider lazy del solo metodo Git `remoteFetchUrl`. I comandi non duplicano questa logica. Il provider evita di inizializzare il client Git quando l'identità è già completa.
+
+Nella risoluzione automatica il progetto esplicito prevale su quello del remote, e il repository viene dal remote. Il project key globale non sostituisce quello riconosciuto. Se il repository è esplicito, si usa il progetto esplicito oppure quello configurato; quando entrambi i dati sono così disponibili non si invoca Git né si valida l'URL inutilizzato. Se manca il progetto anche con repository esplicito, si ricava dal remote. I valori manuali vengono ripuliti dagli spazi esterni; override vuoti sono ignorati. Non esiste fallback al nome della directory o al progetto globale quando il repository deve essere scoperto. Gli errori Git vengono propagati senza alterarne exit code o segnale.
+
+Prima della lettura Git si valida l'URL configurato. Un remote HTTP(S) è accettato soltanto se protocollo, hostname, porta normalizzata e context path corrispondono al server; il percorso viene confrontato per segmenti decodificati e ricodificati una volta. Un remote SSH deve avere lo stesso hostname del server HTTP oppure comparire in `bitbucket.sshHostnames`; un'opzione `sshHostnames` passata direttamente al resolver sostituisce la lista configurata. Le associazioni accettano hostname o IPv6 tra parentesi quadre, senza userinfo, porta, percorso o wildcard, e valgono soltanto per SSH. Porte e prefissi SSH possono differire da quelli HTTP; non si eseguono DNS, letture della configurazione SSH o processi per indovinare alias. Errori di corrispondenza e validazione non riportano l'URL grezzo.
+
+`get-pr-url`, `create-pr` e `merge-pr` passano al resolver `--project-key` e `--repository`. Con identità e branch espliciti, ricerca e merge possono funzionare fuori da Git; creazione richiede comunque fetch, verifica dei branch e confronto dei commit. Il bootstrap carica lazy una configurazione con URL e progetto opzionale. `get-pr-urls` richiede il progetto globale o esplicito, senza discovery Git. Le prove in `test/cli/repository-bootstrap.test.ts` verificano risoluzione senza progetto globale, alias SSH configurato, selezione manuale senza inizializzare Git e obbligo del progetto per le ricerche su tutto il progetto.
+
+`test/cli/repository-discovery.test.ts` collega CLI, `GitClient`, parser, resolver e `BitbucketClient` con Git nativo e HTTP simulato. Verifica checkout rinominati, sottodirectory tramite `-C`, worktree collegati, protocolli supportati, priorità del remote di fetch e riscritture `insteadOf`. Remote assenti, non riconosciuti o non associati al server devono fallire prima di leggere il token o iniziare HTTP; il ripristino della directory avviene anche dopo questi errori. `test/helpers/git-fixture.ts` condivide l'isolamento con le prove native del lettore Git: configurazioni globali e di sistema escluse, environment `GIT_*` ripulito, hook e template vuoti, percorsi sicuri limitati alla fixture. Il worktree usa un commit vuoto locale e `--no-checkout`; non richiede rete, identità o impostazioni Git personali.
+
+`repository/remote-url.ts` espone `parseBitbucketRemoteUrl`, la funzione pura usata dal resolver per riconoscere l'identità dal remote. Il risultato `ParsedBitbucketRemote` in `remote-url-types.ts` contiene protocollo, hostname normalizzato in minuscolo, porta, context path, project key e slug del repository. Project key e slug mantengono la propria capitalizzazione. Il parser non esegue Git, non legge configurazioni e non accede alla rete.
+
+Per HTTP e HTTPS riconosce la forma `[context]/scm/<project>/<repository>`; per SSH URI e sintassi SCP usa gli ultimi due segmenti, conservando l'eventuale prefisso. Supporta suffisso `.git` opzionale, uno slash finale, IPv6 e progetti personali `~utente`. Le porte HTTP/HTTPS predefinite sono normalizzate da `URL` e restituite come assenti; le altre porte esplicite sono numeri da 1 a 65535. In sintassi SCP il primo `:` separa l'host dal percorso, non indica una porta: per specificarla usare `ssh://`. Host alternativi e alias SSH sono soltanto analizzati, non risolti o associati al server HTTP.
+
+Il parser scarta l'eventuale userinfo e non restituisce username o password. I segmenti sono decodificati una volta e validati prima della normalizzazione del percorso: vengono rifiutati segmenti vuoti, `.` e `..`, separatori codificati, whitespace, controlli, query, fragment, encoding malformato e formati locali o protocolli non supportati. Le forme senza utente che iniziano con una lettera e `:` vengono trattate come percorsi Windows, per evitare di interpretarli come host SCP. Gli errori sono `Error` con messaggio fisso, senza URL originale o causa nativa. Il riconoscimento della forma non prova che l'host sia Bitbucket: il controllo con il server configurato appartiene al resolver.
 
 Con un solo branch posizionale, il source è quello corrente e il target è l'argomento. Con due branch entrambi sono espliciti. Source e target non possono coincidere; non interrogare Git quando sono già noti.
 
@@ -250,7 +274,7 @@ Durante lo sviluppo Node esegue TypeScript direttamente. Il build con `tsconfig.
 
 L'allowlist del pacchetto comprende solo runtime JavaScript, manifest, README e Commander con licenza, incluso tramite `bundleDependencies`. `npm run test:package` verifica contenuti, installazione offline con cache vuota e dipendenze di produzione, launcher e configurazione fittizia. Prefisso e dati temporanei sono isolati e ripuliti, senza modificare l'installazione globale o la configurazione reale.
 
-La verifica del pacchetto include help e rapporto di `doctor` installato, con token fittizio in `BB_TOKEN`, e controlla exit code `0` con avvisi e `1` con token vuoto. Non legge portachiavi personali né esegue verifiche remote. Le prove HTTP simulate coprono separatamente errori di connessione, timeout, accesso, parser e prerequisiti; le prove native del server aziendale restano esterne alla suite offline.
+La verifica del pacchetto include help e rapporto di `doctor` installato, con token fittizio in `BB_TOKEN`, e controlla exit code `0` con avvisi e `1` con token vuoto. Verifica inoltre `--repository` e `--project-key` nell'help dei tre comandi PR, persistenza e azzeramento degli hostname SSH, e `get-pr-url` sul JavaScript installato senza progetto globale. La lettura Git è simulata per il remote SSH associato; la selezione manuale deve evitare ogni processo. Una GET simulata valida percorso REST, header e URL stampato. Non legge portachiavi personali né esegue verifiche remote. Le prove HTTP simulate coprono separatamente errori di connessione, timeout, accesso, parser e prerequisiti; le prove native del server aziendale restano esterne alla suite offline.
 
 `npm run test:git` crea un repository Git locale temporaneo dai file necessari al build, senza artefatti compilati né dipendenze già installate. Lo installa tramite URL `git+file` con SHA esplicito, lasciando che npm scarichi le dipendenze ed esegua `prepare`, poi verifica il launcher e le dipendenze di produzione. Richiede accesso al registry e rimane separato dalla suite offline. La CI esegue anche questa prova su Windows, Linux e macOS.
 
