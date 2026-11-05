@@ -132,6 +132,7 @@ try {
         const commandHelp = run(process.execPath, [main, command, "--help"], { env: environment });
         assert.match(commandHelp, /--repository <slug>/);
         assert.match(commandHelp, /--project-key <key>/);
+        if (command === "merge-pr") assert.match(commandHelp, /--delete-source/);
     }
     const doctorHelp = run(process.execPath, [main, "doctor", "--help"], { env: environment });
     assert.match(doctorHelp, /--check-token/);
@@ -230,6 +231,95 @@ try {
         }).trim(),
         "",
     );
+    console.log("Checking source deletion after merge in the installed JavaScript...");
+    for (const outcome of ["deleted", "deletion-rejected", "merge-rejected", "unconfirmed-merge"]) {
+        const mergeCheck = `
+            import assert from 'node:assert/strict';
+            import cp from 'node:child_process';
+            import { syncBuiltinESMExports } from 'node:module';
+            cp.spawnSync = () => { throw new Error('Manual merge must not start processes.'); };
+            syncBuiltinESMExports();
+            const outcome = ${JSON.stringify(outcome)};
+            const requests = [];
+            const target = { name:'Payments', slug:'payments', project:{ key:'REMOTE' } };
+            const source = { name:'Fork', slug:'fork-payments', project:{ key:'FORK' } };
+            const commit = 'a'.repeat(40);
+            const pr = {
+                id:42, version:7, state:'OPEN', reviewers:[],
+                fromRef:{ id:'refs/heads/feature/test', displayId:'feature/test', latestCommit:commit, repository:source },
+                toRef:{ id:'refs/heads/develop', displayId:'develop', repository:target },
+                links:{ self:[{ href:'https://bitbucket.example/context/projects/REMOTE/repos/payments/pull-requests/42' }] }
+            };
+            globalThis.fetch = async (input, init) => {
+                const path = new URL(String(input)).pathname;
+                const method = init.method;
+                requests.push(method);
+                assert.equal(new Headers(init.headers).get('Authorization'), 'Bearer package-smoke-token');
+                if (method === 'GET' && path.endsWith('/pull-requests')) {
+                    return Response.json({ values:[pr], size:1, start:0, limit:100, isLastPage:true });
+                }
+                if (method === 'GET' && path.endsWith('/pull-requests/42')) return Response.json(pr);
+                if (method === 'POST') {
+                    assert.equal(path, '/context/rest/api/latest/projects/REMOTE/repos/payments/pull-requests/42/merge');
+                    assert.deepEqual(JSON.parse(init.body), { version:7 });
+                    return outcome === 'merge-rejected'
+                        ? Response.json({ errors:[{ message:'Merge rejected.' }] }, { status:409 })
+                        : Response.json({ ...pr, state:outcome === 'unconfirmed-merge' ? 'OPEN' : 'MERGED' });
+                }
+                assert.equal(method, 'DELETE');
+                assert.equal(path, '/context/rest/branch-utils/latest/projects/FORK/repos/fork-payments/branches');
+                assert.deepEqual(JSON.parse(init.body), { name:'refs/heads/feature/test', endPoint:commit, dryRun:false });
+                return outcome === 'deletion-rejected'
+                    ? Response.json({ errors:[{ message:'Protected branch.' }] }, { status:403 })
+                    : new Response(null, { status:204 });
+            };
+            await import(${JSON.stringify(pathToFileURL(main).href)});
+            assert.deepEqual(requests, outcome === 'merge-rejected' || outcome === 'unconfirmed-merge'
+                ? ['GET','GET','POST'] : ['GET','GET','POST','DELETE']);
+        `;
+        const result = spawnSync(
+            process.execPath,
+            [
+                "--input-type=module",
+                "--eval",
+                mergeCheck,
+                main,
+                "merge-pr",
+                "feature/test",
+                "develop",
+                "--project-key",
+                "REMOTE",
+                "--repository",
+                "payments",
+                "--delete-source",
+            ],
+            {
+                cwd: fixture,
+                env: { ...environment, BB_TOKEN: "package-smoke-token" },
+                encoding: "utf8",
+                windowsHide: true,
+                timeout: 15000,
+            },
+        );
+        assert.ifError(result.error);
+        assert.equal(result.status, outcome === "deleted" ? 0 : 1, result.stderr);
+        assert.doesNotMatch(result.stderr + result.stdout, /package-smoke-token|AssertionError/);
+        if (outcome === "merge-rejected" || outcome === "unconfirmed-merge") {
+            assert.equal(result.stdout, "");
+            assert.match(result.stderr, /Error:/);
+        } else {
+            assert.equal(
+                result.stdout.trim(),
+                "https://bitbucket.example/context/projects/REMOTE/repos/payments/pull-requests/42",
+            );
+            if (outcome === "deleted") assert.equal(result.stderr, "");
+            else
+                assert.match(
+                    result.stderr,
+                    /was merged, but source branch deletion failed or could not be confirmed/,
+                );
+        }
+    }
     console.log("Package contents, production-only installation, and CLI smoke checks passed.");
 } finally {
     assert.equal(dirname(resolve(fixture)), temporaryRoot);
