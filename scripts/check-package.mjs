@@ -43,13 +43,24 @@ function npm(args, options) {
 }
 
 try {
+    assert.ok(process.argv.length <= 3, "Specify at most one existing tarball.");
+    const suppliedTarball = process.argv[2] === undefined ? undefined : resolve(process.argv[2]);
     const artifacts = join(fixture, "artifacts");
     mkdirSync(artifacts);
-    console.log("Building and packing the CLI...");
+    console.log(
+        suppliedTarball
+            ? "Inspecting the supplied release tarball..."
+            : "Building and packing the CLI...",
+    );
     const packOutput = JSON.parse(
-        npm(["pack", "--json", "--foreground-scripts=false", "--pack-destination", artifacts], {
-            cwd: projectRoot,
-        }),
+        npm(
+            suppliedTarball
+                ? ["pack", suppliedTarball, "--dry-run", "--ignore-scripts", "--offline", "--json"]
+                : ["pack", "--json", "--foreground-scripts=false", "--pack-destination", artifacts],
+            {
+                cwd: projectRoot,
+            },
+        ),
     );
     // npm 11 returns an array; npm 12 keys the results by package name.
     const packages = Array.isArray(packOutput) ? packOutput : Object.values(packOutput);
@@ -63,8 +74,14 @@ try {
     assert.deepEqual(packed.bundled, ["commander"]);
     assert.deepEqual(
         packedPaths.filter((path) => !path.startsWith("node_modules/commander/")).sort(),
-        [...expectedRuntime, "README.md", "docs/json-output.md", "package.json"].sort(),
-        "The package must contain only runtime JavaScript, its manifest, README, JSON contract, and bundled Commander.",
+        [
+            ...expectedRuntime,
+            "README.md",
+            "CHANGELOG.md",
+            "docs/json-output.md",
+            "package.json",
+        ].sort(),
+        "The package must contain only runtime JavaScript, its manifest, README, changelog, JSON contract, and bundled Commander.",
     );
     for (const file of ["package.json", "index.js", "lib/command.js", "LICENSE"]) {
         assert.ok(
@@ -80,7 +97,7 @@ try {
         "--global",
         "--prefix",
         prefix,
-        join(artifacts, packed.filename),
+        suppliedTarball ?? join(artifacts, packed.filename),
         "--omit=dev",
         "--ignore-scripts",
         "--no-audit",
@@ -95,6 +112,15 @@ try {
             ? join(prefix, "node_modules", "bb")
             : join(prefix, "lib", "node_modules", "bb");
     const manifest = JSON.parse(readFileSync(join(installedPackage, "package.json"), "utf8"));
+    assert.equal(manifest.name, "bb");
+    assert.equal(
+        manifest.version,
+        JSON.parse(readFileSync(join(projectRoot, "package.json"), "utf8")).version,
+    );
+    assert.equal(
+        readFileSync(join(installedPackage, "CHANGELOG.md"), "utf8"),
+        readFileSync(join(projectRoot, "CHANGELOG.md"), "utf8"),
+    );
     assert.equal(
         readFileSync(join(installedPackage, "docs", "json-output.md"), "utf8"),
         readFileSync(join(projectRoot, "docs", "json-output.md"), "utf8"),
@@ -140,6 +166,10 @@ try {
     assert.match(help, /doctor/);
 
     const main = join(installedPackage, "dist", "main.js");
+    assert.equal(
+        run(process.execPath, [main, "--version"], { env: environment }).trim(),
+        manifest.version,
+    );
     for (const command of ["get-pr-url", "create-pr", "merge-pr"]) {
         const commandHelp = run(process.execPath, [main, command, "--help"], { env: environment });
         assert.match(commandHelp, /--repository <slug>/);

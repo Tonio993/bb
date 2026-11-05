@@ -56,6 +56,7 @@ try {
         "package.json",
         "package-lock.json",
         "README.md",
+        "CHANGELOG.md",
         "docs/json-output.md",
         ".gitignore",
         "scripts/build.mjs",
@@ -143,6 +144,11 @@ try {
             : run(shim, ["--help"]);
     assert.match(help, /Usage: bb/);
     assert.match(help, /merge-pr/);
+    const main = join(installedPackage, "dist", "main.js");
+    assert.equal(
+        run(process.execPath, [main, "--version"]).trim(),
+        JSON.parse(readFileSync(join(projectRoot, "package.json"), "utf8")).version,
+    );
     console.log("Git installation, compiled launcher, and production dependencies passed.");
 } finally {
     assert.equal(dirname(resolve(fixture)), temporaryRoot);
